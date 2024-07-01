@@ -1,0 +1,10 @@
+Metadata-Version: 2.1
+Name: hydra-pspec
+Version: 0.0.0
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: multiprocess
+Requires-Dist: pyuvdata
+Requires-Dist: astropy
+Requires-Dist: jsonargparse
+Requires-Dist: matplotlib
