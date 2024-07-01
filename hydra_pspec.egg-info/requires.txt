@@ -1,0 +1,7 @@
+numpy
+scipy
+multiprocess
+pyuvdata
+astropy
+jsonargparse
+matplotlib

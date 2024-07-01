@@ -1,0 +1,7 @@
+README.md
+pyproject.toml
+hydra_pspec.egg-info/PKG-INFO
+hydra_pspec.egg-info/SOURCES.txt
+hydra_pspec.egg-info/dependency_links.txt
+hydra_pspec.egg-info/requires.txt
+hydra_pspec.egg-info/top_level.txt
