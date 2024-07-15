@@ -10,6 +10,7 @@ from scipy.linalg import fractional_matrix_power as fmp
 from sklearn.metrics import *
 import scipy.linalg as sl
 import scipy
+import time
 
 def fourier_2d(freqs,times):
     F, T = np.meshgrid(freqs, times)
@@ -265,55 +266,68 @@ def gcr_sys(vis,Ninv,B,nm_list, times, freqs, h_j=None):
     Returns:
     b_sys: Complex vector of systematic amplitude predictions of shape=`(len(nm_list))`.
     '''
+    # t0=time.time()
     if h_j is None:
         h_j=h_j_op(freqs=freqs, lsts=times, nm_list=nm_list)
     
     B_i=inv_mat(B)
 
     vis_f=vis.flatten()
-
+    # t1=time.time()
     w_re=np.random.normal(size=(len(vis_f),1),scale=1/np.sqrt(2),loc=0)
     w_im=np.random.normal(size=(len(vis_f),1),scale=1/np.sqrt(2),loc=0)
     w=w_re+w_im*1.j
-
+    # t2=time.time()
     #FIXME: temporary solution for the issue with noise matrix size. Given noise matrix is of shape (freq,freq). We need a diag matrix of shape (flattened_data,flattened_data)
     diag_el=Ninv[0,0]
-    Ninv=diag_el*np.eye(np.shape(vis_f)[0])
-    Ninv=np.diag(Ninv).reshape([np.shape(Ninv)[0],1])
-    # Ninv_sqrt=np.sqrt(diag_el)*np.eye(np.shape(Ninv)[0])
+    Ninv=diag_el*np.ones(shape=np.shape(vis_f)[0], dtype=complex).reshape([np.shape(vis_f)[0],1])
     Ninv_sqrt=np.sqrt(Ninv)
-
+    # t3=time.time()
+    # print("\n \nNinv and ninv_sqrt vectors made in time: ",t3-t0)
     a11=B_i+ np.real(h_j).T @ (Ninv*np.real(h_j)) + np.imag(h_j).T @ (Ninv*np.imag(h_j))
     a12=np.imag(h_j).T @ (Ninv*np.real(h_j)) - np.real(h_j).T @ (Ninv*np.imag(h_j))
     a21=np.real(h_j).T @ (Ninv*np.imag(h_j)) - np.imag(h_j).T @ (Ninv*np.real(h_j))
     a22=B_i+ np.imag(h_j).T @ (Ninv*np.imag(h_j)) + np.real(h_j).T @ (Ninv*np.real(h_j))
+    # t4=time.time()
+
+    # print("A mat elements made in time: ",t4-t3)
 
     b111=np.real(h_j).T @ (Ninv.T*np.real(vis_f)).T[:,0]
     b112=np.imag(h_j).T @ (Ninv.T*np.imag(vis_f)).T[:,0]
     b113=(np.real(h_j).T @ (Ninv_sqrt*np.real(w)))[:,0]
-    # b113=np.real(h_j).T @ fmp(Ninv,0.5) @ np.real(w)
-    # b114=np.imag(h_j).T @ fmp(Ninv,0.5) @ np.imag(w)
     b114=(np.imag(h_j).T @ (Ninv_sqrt*np.imag(w)))[:,0]
     b11=b111+b112+b113+b114
+    # t5=time.time()
+
+    # print("Row 1 of b mat made in time: ",t5-t4)
 
     b211=-1*np.imag(h_j).T @ (Ninv.T*np.real(vis_f)).T[:,0]
     b212=np.real(h_j).T @ (Ninv.T*np.imag(vis_f)).T[:,0]
-    # b213=-1*np.imag(h_j).T @ fmp(Ninv,0.5) @ np.real(w)
     b213=(-1*np.imag(h_j).T @ (Ninv_sqrt*np.real(w)))[:,0]
-    # b214=np.real(h_j).T @ fmp(Ninv,0.5) @ np.imag(w)
     b214=(np.real(h_j).T @ (Ninv_sqrt*np.imag(w)))[:,0]
     b21=b211+b212+b213+b214
-    
+    # t6=time.time()
+
+    # print("Row 2 of b mat made in time: ",t6-t5)
     A_mat=[[a11, a12],[a21, a22]]
-
+    
     sqA=sq_mat_tr2(A_mat)
+    
     b_mat=np.append(b11,b21)
-
+    # t7=time.time()
+    # print("A mat and b mat collated, a mat turned into square mat in time: ", t7-t6)
     # b_pred=sl.solve(sqA,b_mat)
     b_sys,_=scipy.sparse.linalg.cg(sqA,b_mat,tol=1e-10)
+    # t8=time.time()
+
+    # print("Solver ran in time: ",t8-t7)
 
     n_half=b_sys.shape[0]//2
     b_real=b_sys[:n_half]
     b_imag=b_sys[n_half:]
     b_sys=b_real+1.j*b_imag
+    # t9=time.time()
+
+    # print("Solution turned into complex vector in time: ",t9-t8)
+    # print("Total func run time: ",t9-t0,"\n")
     return b_sys
