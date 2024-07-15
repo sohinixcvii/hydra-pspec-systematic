@@ -1,0 +1,50 @@
+noise:
+    Trx: 1000
+    seed: random # choose a seed based on the time
+gains:
+    seed: random
+#    time_vary_params: 
+#        amp:
+#            variation_timescales: 0.33 # 8 hour timescale
+#            variation_amps: 0.1 # 10 percent
+#            variation_modes: linear
+reflection_spectrum:
+    seed: 2440572501
+    Ncopies: 20
+    dly_rng:  # delays from 200 to 1000 ns
+    - 200
+    - 1200
+    amp_range:  # amplitudes from 10^-3 to 10^-4
+    - -3
+    - -4
+    dly_spread: 30  # 10 ns std delay jitter
+    amp_scale: 0.1  # 1 percent std amplitude jitter
+#    time_vary_params:
+#        amp:
+#            variation_amps: 0.04  # 4 percent over the night
+#            variation_timescales: 0.33
+#            variation_modes: linear
+reflections:
+    seed:  # Use different seeds for the two reflections.
+    - 1420405752
+    - 4004572152
+    dly:
+    - 200
+    - 1200
+    dly_spread: 
+    - 20 # 10 ns jitter for the 200 ns reflection
+    - 40 # delay jitter with 30 ns std for the 1200 ns reflection
+    amp: 
+    - 0.03  
+    - 0.008
+    amp_scale: 0.01 # amplitude jitter up to 1 percent of amp
+#    time_vary_params:
+#        amp:
+#            variation_amps: 0.04
+#            variation_timescales: 0.33
+#            variation_modes: linear
+xtalk:
+    seed: random
+    Ncopies: 10 # crosstalk spectrum with 10 realizations
+    amp_range: [-4, -6] # amplitudes from 10^-4 to 10^-6
+    dly_rng: [900, 1300] # realizations at delays between 900 and 1300 ns

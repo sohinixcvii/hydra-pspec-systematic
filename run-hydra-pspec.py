@@ -25,8 +25,10 @@ from hydra_pspec.utils import (
     add_mtime_to_filepath
 )
 
+with np.load('/Users/user/Documents/Codes/hydra-pspec-systematic/hera_val/nm_list.npz') as nm:
+    nm_list=np.array(nm[nm.files[0]]).astype(int)
 
-nm_list=(np.array([0,0]),np.array([1,1])) #FIXME: implement this properly
+# nm_list=(np.array([0,0]),np.array([1,1])) #FIXME: implement this properly
 try:
     from mpi4py import MPI
 

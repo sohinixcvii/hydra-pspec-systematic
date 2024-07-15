@@ -1,0 +1,154 @@
+Loading config file config-3bl-mpi.yaml
+
+{'Nfgmodes': 12,
+ 'Niter': 1,
+ 'Nproc': 1,
+ 'ant_str': '0_1,0_3,0_5',
+ 'clobber': False,
+ 'config': [Path_fr(config-3bl-mpi.yaml, cwd=/Users/user/Documents/Codes/hydra-pspec-systematic)],
+ 'dirname': 'results-seed-7123689-Niter-1000',
+ 'fgmodes': '/Users/user/Documents/Codes/hydra-pspec/test_data/',
+ 'fgmodes_file': 'fgmodes.npy',
+ 'file_paths': [Path_fr(test_data/vis-eor-fgs.uvh5, cwd=/Users/user/Documents/Codes/hydra-pspec-systematic)],
+ 'flags': None,
+ 'flags_file': None,
+ 'freq_range': None,
+ 'map_estimate': False,
+ 'n_ps_prior_bins': 3,
+ 'noise': '/Users/user/Documents/Codes/hydra-pspec/test_data/',
+ 'noise_cov': '/Users/user/Documents/Codes/hydra-pspec/test_data/',
+ 'noise_cov_file': 'noise-cov.npy',
+ 'noise_file': 'noise.npy',
+ 'nsamples': None,
+ 'nsamples_file': None,
+ 'out_dir': Path_dw(./, cwd=/Users/user/Documents/Codes/hydra-pspec-systematic),
+ 'ps_prior_hi': 2.0,
+ 'ps_prior_lo': 0.1,
+ 'seed': 7123689,
+ 'sigcov0': '/Users/user/Documents/Codes/hydra-pspec/test_data/',
+ 'sigcov0_file': 'eor-cov.npy',
+ 'verbose': True,
+ 'write_Niter': 100}
+
+Reading 1 file(s)
+
+Writing output(s) to /Users/user/Documents/Codes/hydra-pspec-systematic/results-seed-7123689-Niter-1000
+
+Printing status messages for:
+Rank:     0
+Baseline: (0, 1)
+
+Iter     Time [s]    Info    |Ax - b|    Chisq    ln Post
+-----    --------    ----    --------    -----    -------
+1        Matrices built
+0.2         0.0     1.34e-01    
+ 
+Ninv and ninv_sqrt vectors made in time:  0.0013918876647949219
+A mat elements made in time:  0.0015249252319335938
+Row 1 of b mat made in time:  0.00032782554626464844
+Row 2 of b mat made in time:  0.0004601478576660156
+A mat and b mat collated, a mat turned into square mat in time:  4.291534423828125e-05
+Solver ran in time:  0.0002963542938232422
+Solution turned into complex vector in time:  5.7220458984375e-06
+Total func run time:  0.004049777984619141 
+
+         259 function calls in 0.004 seconds
+
+   Ordered by: internal time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.003    0.003    0.004    0.004 sys_solver.py:255(gcr_sys)
+        2    0.001    0.000    0.001    0.000 {method 'normal' of 'numpy.random.mtrand.RandomState' objects}
+        1    0.000    0.000    0.000    0.000 index_tricks.py:785(fill_diagonal)
+        1    0.000    0.000    0.000    0.000 sys_solver.py:123(inv_mat)
+        1    0.000    0.000    0.000    0.000 _interface.py:842(aslinearoperator)
+        8    0.000    0.000    0.000    0.000 {built-in method builtins.print}
+        1    0.000    0.000    0.000    0.000 warnings.py:96(_showwarnmsg)
+        1    0.000    0.000    0.000    0.000 warnings.py:117(_formatwarnmsg)
+        1    0.000    0.000    0.000    0.000 numeric.py:136(ones)
+        1    0.000    0.000    0.000    0.000 iterative.py:315(cg)
+        1    0.000    0.000    0.000    0.000 twodim_base.py:234(diag)
+        1    0.000    0.000    0.000    0.000 {method 'flatten' of 'numpy.ndarray' objects}
+        1    0.000    0.000    0.000    0.000 {method 'any' of 'numpy.ndarray' objects}
+        1    0.000    0.000    0.000    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+        1    0.000    0.000    0.000    0.000 iterative.py:11(_get_atol_rtol)
+        2    0.000    0.000    0.000    0.000 _interface.py:146(__new__)
+       12    0.000    0.000    0.000    0.000 {built-in method numpy.asarray}
+        3    0.000    0.000    0.000    0.000 linalg.py:2383(norm)
+        1    0.000    0.000    0.000    0.000 {method 'write' of '_io.TextIOWrapper' objects}
+        1    0.000    0.000    0.000    0.000 utils.py:31(make_system)
+        1    0.000    0.000    0.000    0.000 {built-in method _warnings.warn}
+        2    0.000    0.000    0.000    0.000 {built-in method numpy.array}
+        2    0.000    0.000    0.000    0.000 _interface.py:161(__init__)
+        1    0.000    0.000    0.000    0.000 function_base.py:5563(append)
+        7    0.000    0.000    0.000    0.000 {method 'dot' of 'numpy.ndarray' objects}
+        1    0.000    0.000    0.000    0.000 deprecation.py:209(inner_f)
+        4    0.000    0.000    0.000    0.000 _sputils.py:218(isintlike)
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:1980(shape)
+        1    0.000    0.000    0.000    0.000 sys_solver.py:107(sq_mat_tr2)
+        1    0.000    0.000    0.000    0.000 logger.py:202(_showwarning)
+        1    0.000    0.000    0.000    0.000 fromnumeric.py:1565(diagonal)
+        9    0.000    0.000    0.000    0.000 {built-in method builtins.isinstance}
+        3    0.000    0.000    0.000    0.000 {built-in method numpy.zeros}
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:3176(ndim)
+       16    0.000    0.000    0.000    0.000 type_check.py:120(real)
+        1    0.000    0.000    0.000    0.000 _interface.py:307(matmat)
+        2    0.000    0.000    0.000    0.000 warnings.py:403(__init__)
+        1    0.000    0.000    0.000    0.000 _sputils.py:384(is_pydata_spmatrix)
+        1    0.000    0.000    0.000    0.000 warnings.py:20(_showwarnmsg_impl)
+        2    0.000    0.000    0.000    0.000 _interface.py:205(matvec)
+       16    0.000    0.000    0.000    0.000 type_check.py:166(imag)
+        1    0.000    0.000    0.000    0.000 shape_base.py:81(atleast_2d)
+        1    0.000    0.000    0.000    0.000 _interface.py:793(__init__)
+        1    0.000    0.000    0.000    0.000 _interface.py:193(_matvec)
+        1    0.000    0.000    0.000    0.000 type_check.py:302(iscomplexobj)
+        2    0.000    0.000    0.000    0.000 _sputils.py:240(isshape)
+        1    0.000    0.000    0.000    0.000 fromnumeric.py:1768(ravel)
+        4    0.000    0.000    0.000    0.000 {method 'reshape' of 'numpy.ndarray' objects}
+        1    0.000    0.000    0.000    0.000 _methods.py:55(_any)
+        1    0.000    0.000    0.000    0.000 {method 'diagonal' of 'numpy.ndarray' objects}
+        1    0.000    0.000    0.000    0.000 {built-in method builtins.getattr}
+        1    0.000    0.000    0.000    0.000 _base.py:1513(issparse)
+        1    0.000    0.000    0.000    0.000 utils.py:19(coerce)
+       10    0.000    0.000    0.000    0.000 {built-in method time.time}
+        1    0.000    0.000    0.000    0.000 uvbase.py:24(_warning)
+        5    0.000    0.000    0.000    0.000 {method 'ravel' of 'numpy.ndarray' objects}
+        1    0.000    0.000    0.000    0.000 warnings.py:10(showwarning)
+       16    0.000    0.000    0.000    0.000 type_check.py:116(_real_dispatcher)
+       16    0.000    0.000    0.000    0.000 type_check.py:162(_imag_dispatcher)
+       10    0.000    0.000    0.000    0.000 {built-in method builtins.len}
+        7    0.000    0.000    0.000    0.000 {built-in method builtins.issubclass}
+        3    0.000    0.000    0.000    0.000 {built-in method builtins.hasattr}
+        1    0.000    0.000    0.000    0.000 {method 'copy' of 'numpy.ndarray' objects}
+        1    0.000    0.000    0.000    0.000 {built-in method numpy.empty}
+        3    0.000    0.000    0.000    0.000 linalg.py:140(isComplexType)
+        9    0.000    0.000    0.000    0.000 {built-in method numpy.asanyarray}
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:1976(_shape_dispatcher)
+        1    0.000    0.000    0.000    0.000 {built-in method builtins.max}
+        1    0.000    0.000    0.000    0.000 _interface.py:823(__init__)
+        1    0.000    0.000    0.000    0.000 twodim_base.py:230(_diag_dispatcher)
+        4    0.000    0.000    0.000    0.000 fromnumeric.py:3172(_ndim_dispatcher)
+        2    0.000    0.000    0.000    0.000 {built-in method __new__ of type object at 0x10487afe8}
+        1    0.000    0.000    0.000    0.000 _interface.py:799(_matmat)
+        2    0.000    0.000    0.000    0.000 multiarray.py:834(vdot)
+        1    0.000    0.000    0.000    0.000 index_tricks.py:781(_fill_diagonal_dispatcher)
+        4    0.000    0.000    0.000    0.000 {built-in method _operator.index}
+        3    0.000    0.000    0.000    0.000 linalg.py:2379(_norm_dispatcher)
+        1    0.000    0.000    0.000    0.000 {method 'get' of 'dict' objects}
+        1    0.000    0.000    0.000    0.000 multiarray.py:153(concatenate)
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+        1    0.000    0.000    0.000    0.000 {built-in method builtins.callable}
+        1    0.000    0.000    0.000    0.000 multiarray.py:1080(copyto)
+        1    0.000    0.000    0.000    0.000 function_base.py:5559(_append_dispatcher)
+        1    0.000    0.000    0.000    0.000 _interface.py:826(_matvec)
+        1    0.000    0.000    0.000    0.000 multiarray.py:85(empty_like)
+        1    0.000    0.000    0.000    0.000 {method 'append' of 'list' objects}
+        1    0.000    0.000    0.000    0.000 shape_base.py:77(_atleast_2d_dispatcher)
+        1    0.000    0.000    0.000    0.000 fromnumeric.py:1561(_diagonal_dispatcher)
+        1    0.000    0.000    0.000    0.000 fromnumeric.py:1764(_ravel_dispatcher)
+        1    0.000    0.000    0.000    0.000 type_check.py:205(_is_type_dispatcher)
+        1    0.000    0.000    0.000    0.000 utils.py:81(postprocess)
+
+
+1.008    -48672.9    
+

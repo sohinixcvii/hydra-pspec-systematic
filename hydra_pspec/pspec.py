@@ -8,10 +8,10 @@ from . import sys_solver as sys_sol
 from multiprocess import Pool, current_process
 from . import utils
 import os, time
-import cProfile
-import pstats
+# import cProfile
+# import pstats
 import sys
-pr=cProfile.Profile()
+# pr=cProfile.Profile()
 def sample_S(s=None, sk=None, prior=None):
     """
     Draw samples of the bandpowers of S, p(S|s). This assumes that the conditional
@@ -435,13 +435,13 @@ def gibbs_step_fgmodes(
     model = signal_cr + fg_amps @ fgmodes.T  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
     # print("Model made")
     # 1a. Solve GCR equation to obtain estimate of systematic component
-    pr.enable()
+    # pr.enable()
     b_sys = sys_sol.gcr_sys(vis=vis - model, Ninv=Ninv, B=B, nm_list=nm_list, h_j=h_j, times=lsts, freqs=freqs)
-    pr.disable()
+    # pr.disable()
 
-    ps = pstats.Stats(pr, stream=sys.stdout)
-    ps.strip_dirs()
-    ps.sort_stats('time').print_stats()
+    # ps = pstats.Stats(pr, stream=sys.stdout)
+    # ps.strip_dirs()
+    # ps.sort_stats('time').print_stats()
     # print("GCR sys done")
     # Update systematics model
     sys_model = h_j @ b_sys # Shape of flattened data
@@ -619,7 +619,7 @@ def gibbs_sample_with_fg(
         if verbose:
             print(f"{i+1:<9d}", end="")
         if i==0:
-            b_sys_past=vis[nm_list]
+            b_sys_past=vis[nm_list[:,0],nm_list[:,1]]
             b_sys_past=np.array([[b] for b in b_sys_past])
         else:
             b_sys_past=b_sys[i-1]

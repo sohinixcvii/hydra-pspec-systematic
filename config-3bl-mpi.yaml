@@ -24,4 +24,4 @@ noise_cov: "/Users/user/Documents/Codes/hydra-pspec/test_data/"
 noise_cov_file: "noise-cov.npy"
 # Input files
 file_paths:
-- "test_data/vis-eor-fgs.uvh5"
+- "/Users/user/Documents/Codes/hydra-pspec-systematic/hera_val/vis_corrupted_test.uvh5"
