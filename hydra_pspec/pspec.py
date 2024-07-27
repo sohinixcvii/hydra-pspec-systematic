@@ -11,8 +11,81 @@ import os, time
 # import cProfile
 # import pstats
 import sys
+import uvtools
+from uvtools.dspec import gen_window
+from uvtools.utils import FFT
 # pr=cProfile.Profile()
-def sample_S(s=None, sk=None, prior=None):
+
+def data_dly_fr(data, freqs, times, windows=None,
+                    freq_window_kwargs=None, time_window_kwargs=None):
+    """
+    Transform data to delay fringe-rate space
+    
+    This function takes a 2D array of visibility data (in units of Jy), as well 
+    as the corresponding frequency and time arrays (in units of Hz and JD, respectively), 
+    and makes a 2x2 grid of plots where each plot shows each one of the possible choices 
+    for Fourier transforming along an axis. The upper-left plot is in the frequency-time 
+    domain; the upper-right plot is in the frequency-fringe-rate domain; the lower-left 
+    plot is in the delay-time domain; and the lower-right plot is in the delay-fringe-rate 
+    domain.
+    
+    Parameters
+    ----------
+    data : ndarray, shape=(NTIMES,NFREQS)
+        Array containing the visibility to be plotted. Assumed to be in units of Jy. 
+        
+    freqs : ndarray, shape=(NFREQS,)
+        Array containing the observed frequencies. Assumed to be in units of Hz.
+        
+    times : ndarray, shape=(NTIMES,)
+        Array containing the observed times. Assumed to be in units of JD.
+        
+    windows : tuple of str or str, optional
+        Choice of taper to use for the fringe-rate and delay transforms. Must be 
+        either tuple, list, or string. If a tuple or list, then it must be either 
+        length 1 or length 2; if it is length 2, then the zeroth entry is the taper 
+        to be applied along the time axis for the fringe-rate transform, with the 
+        other entry specifying the taper to be applied along the frequency axis 
+        for the delay transform. Each entry is passed to uvtools.dspec.gen_window. 
+        If ``windows`` is a length 1 tuple/list or a string, then it is assumed 
+        that the same taper is to be used for both axes. Default is to use no 
+        taper (or, equivalently, a boxcar).
+
+    freq_window_kwargs : dict, optional
+        Keyword arguments to pass to uvtools.dspec.gen_window for generating the 
+        frequency taper. Default is to pass no keyword arguments.
+        
+    time_window_kwargs : dict, optional
+        Keyword arguments to pass to uvtools.dspec.gen_window for generating the 
+        time taper. Default is to pass no keyword arguments.
+    
+    Returns
+    -------
+    data_dl_fr :
+        data in delay-fringe rate space
+    """
+    # do some data prep
+    freq_window_kwargs = freq_window_kwargs or {}
+    time_window_kwargs = time_window_kwargs or {}
+    if windows is not None:
+        time_window = gen_window(windows, times.size, **time_window_kwargs)
+        freq_window = gen_window(windows, freqs.size, **freq_window_kwargs)
+    else:
+        time_window = gen_window(None, times.size, **time_window_kwargs)
+        freq_window = gen_window(None, freqs.size, **freq_window_kwargs)
+        
+    time_window = time_window[:, None]
+    freq_window = freq_window[None, :]
+    # data_fr = FFT(data * time_window, axis=0)
+    # data_dly = FFT(data * freq_window, axis=1)
+    data_fr_dly = FFT(FFT(data * time_window, axis=0) * freq_window, axis=1)
+    
+    # fringe_rates = fourier_freqs(times * units.day.to('s')) * 1e3 # mHz
+    # dlys = fourier_freqs(freqs) * 1e9 # ns
+
+    return data_fr_dly
+
+def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
     """
     Draw samples of the bandpowers of S, p(S|s). This assumes that the conditional
     distributions for the bandpowers are uncorrelated with one another, i.e. the Fourier-
@@ -41,6 +114,7 @@ def sample_S(s=None, sk=None, prior=None):
         sk = np.fft.ifftshift(s, axes=axes)
         sk = np.fft.fftn(sk, axes=axes)
         sk = np.fft.fftshift(sk, axes=axes)
+    # np.savetxt('sk_save',sk)
     Nobs, Nfreqs = sk.shape
 
     if prior is None:
@@ -58,8 +132,14 @@ def sample_S(s=None, sk=None, prior=None):
     # We obtain samples of the power spectrum (x) by instead sampling the random
     # variable y = x / beta and then obtain x via x = y * beta
     x = np.zeros(Nfreqs)
+    # print("Nfreqs: ",Nfreqs)
     for i in range(Nfreqs):
+        # print("Iteration: ",i)
+        # print("Priors: ",prior[:,i])
+        # print("Beta value: ",beta[i]," Alpha: ",alpha)
         if np.any(prior[:, i] > 0):
+            # print("If triggered")
+
             # The pdf for a log-uniform prior is proportional to 1 / x.
             # Multiplying the inverse gamma likelihood by this prior results
             # in an additional factor of 1 / x which increases the effective
@@ -69,11 +149,31 @@ def sample_S(s=None, sk=None, prior=None):
             x[i] = invgamma.rvs(a=alpha+1) * beta[i]
             outside_prior = x[i] > prior[0, i] or x[i] < prior[1, i]
             if outside_prior:
+                # print("While loop started")
+                prior_iter=0
                 # Resample until we obtain a sample within the prior bounds
-                while x[i] > prior[0, i] or x[i] < prior[1, i]:
+                # x_resample=[]
+                while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                     x[i] = invgamma.rvs(a=alpha+1) * beta[i]
+                    prior_iter+=1
+                    # x_resample.append(x[i])
+                # np.savetxt('x_resample',x_resample)
+
+                if prior_iter>=max_prior_iter:
+                    #DIAG: artificially inflating priors
+                    prior[0,i]=1000
+                    prior[1,i]=0
+                    prior_iter=0
+                    # print("Updating priors")
+                    while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
+                        x[i] = invgamma.rvs(a=alpha+1) * beta[i]
+                        prior_iter+=1
+                    if prior_iter>=max_prior_iter:
+                        raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
+            # print("Else triggered")
             x[i] = invgamma.rvs(a=alpha) * beta[i]
+        # print("\n")
 
     return x
 
@@ -417,7 +517,6 @@ def gibbs_step_fgmodes(
 
     # Get matrices necessary for the GCR step
     matrices = build_matrices(Nparams, flags, signal_S, Ninv, fgmodes)
-    print("Matrices built")
     sys_model_past= h_j @ b_sys_past
     sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs])
     # print("Past sys model done")
@@ -426,6 +525,9 @@ def gibbs_step_fgmodes(
         vis=vis - sys_model_past, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
         map_estimate=map_estimate, verbose=verbose
     )
+    #DIAG: saving the residuals for diagnostic test
+    # np.savetxt('residuals',vis-sys_model_past)
+
     # print("GCR fgmodes solved")
     # Extract separate signal and FG parts from the solution
     signal_cr = cr[:, : -fgmodes.shape[1]]
@@ -458,13 +560,12 @@ def gibbs_step_fgmodes(
             print(f"{chisq_mean:<9.1e}", end="")
         else:
             print(f"{chisq_mean:<9.3f}", end="")
-
     # (2) Sample EoR signal power spectrum (and also convert to equivalent
     # covariance matrix sample)
+    # print("Signal_cr shape: ", signal_cr.shape," ps_prior shape ",ps_prior.shape)
     ps_sample = sample_S(s=signal_cr, prior=ps_prior)
     # The factor of 1/Nfreqs**2 here is an FFT normalization
     S_sample = covariance_from_pspec(ps_sample / Nfreqs**2, fourier_op)
-
     # Log posterior
     # Each time is treated as an independent sample.  So, the joint
     # log posterior for all times is the sum of the individual log
@@ -484,10 +585,10 @@ def gibbs_step_fgmodes(
             @ signal_cr[:, flags].T
         )
     ))
-    ln_post = ln_post.real
+    # ln_post = ln_post.real
+    ln_post=np.real(ln_post)
     if verbose:
         print(f"{ln_post:<12.1f}")
-
     # Return samples
     return signal_cr, S_sample, ps_sample, fg_amps, b_sys, chisq, ln_post 
 
@@ -616,14 +717,16 @@ def gibbs_sample_with_fg(
         print("-----    --------    ----    --------    -----    -------")
 
     for i in range(Niter):
+        print("Iteration: ",i)
         if verbose:
             print(f"{i+1:<9d}", end="")
         if i==0:
-            b_sys_past=vis[nm_list[:,0],nm_list[:,1]]
+            b_sys_past=np.loadtxt('b_sys_past',dtype=complex)
             b_sys_past=np.array([[b] for b in b_sys_past])
         else:
             b_sys_past=b_sys[i-1]
-        B_cov=b_sys_past**2*np.eye(len(b_sys_past))
+        B_cov=(b_sys_past**2)*np.eye(len(b_sys_past))
+        print("B_cov done. Shape: ", B_cov.shape)
         # Do Gibbs iteration
         signal_cr[i], signal_S, signal_ps[i], fg_amps[i], b_sys[i], chisq[i], ln_post[i]\
             = gibbs_step_fgmodes(
@@ -644,7 +747,7 @@ def gibbs_sample_with_fg(
                 map_estimate=map_estimate,
                 verbose=verbose
             )
-
+        print("Iter: ",i," done")
         if out_dir is not None and (i+1) % write_Niter == 0:
             # Write current set of samples to disk
             utils.write_numpy_files(
@@ -657,6 +760,7 @@ def gibbs_sample_with_fg(
                 chisq[:i+1],
                 ln_post[:i+1]
             )
+        print("Data saved for ",i)
     if out_dir is not None and Niter % write_Niter > 0:
         # Write all samples to disk
         utils.write_numpy_files(

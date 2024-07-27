@@ -306,7 +306,7 @@ def gcr_sys(vis,Ninv,B,nm_list, times, freqs, h_j=None):
     b213=(-1*np.imag(h_j).T @ (Ninv_sqrt*np.real(w)))[:,0]
     b214=(np.real(h_j).T @ (Ninv_sqrt*np.imag(w)))[:,0]
     b21=b211+b212+b213+b214
-    # t6=time.time()
+    t6=time.time()
 
     # print("Row 2 of b mat made in time: ",t6-t5)
     A_mat=[[a11, a12],[a21, a22]]
