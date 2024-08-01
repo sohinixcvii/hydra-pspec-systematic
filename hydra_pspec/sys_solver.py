@@ -35,6 +35,8 @@ def fourier_mode_2d_udf(freqs, times, nfreq, ntime, freq0=None, time0=None,
     Construct a set of 2D Fourier modes from a list of wavenumber integers, 
     to form an incomplete set of 2D Fourier modes.
     """
+    # print("Modes: {}".format([ntime,nfreq]))
+    freqs=freqs*1e-9
     Lfreq = (freqs[1] - freqs[0]) * freqs.size
     Ltime = (times[1] - times[0]) * times.size
 
@@ -64,8 +66,11 @@ def fourier_mode_2d_udf(freqs, times, nfreq, ntime, freq0=None, time0=None,
     t2d, f2d = np.meshgrid(times - time0, freqs - freq0)
 
     # Calculate wavenumbers for each mode
-    kfreq = 2. * np.pi * nfreq / Lfreq # inverse freq. units
-    ktime = 2. * np.pi * ntime / Ltime # inverse time units
+    # kfreq = (2. * np.pi * nfreq / Lfreq)*1e-9 # inverse freq. units
+    # ktime = 2. * np.pi * ntime / Ltime # inverse time units
+    # FIXME: new kfreq test
+    kfreq =(2 * np.pi * nfreq)
+    ktime = (2 * np.pi * ntime)
 
     # Shape: (Nmodes, Nfreqs, Ntimes)
     basis_fns = np.exp(1.j \
