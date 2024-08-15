@@ -8,13 +8,15 @@ from . import sys_solver as sys_sol
 from multiprocess import Pool, current_process
 from . import utils
 import os, time
-# import cProfile
-# import pstats
+import cProfile
+import pstats
 import sys
 import uvtools
 from uvtools.dspec import gen_window
 from uvtools.utils import FFT
-# pr=cProfile.Profile()
+from pyuvdata import UVData
+uvd=UVData()
+pr=cProfile.Profile()
 
 def data_dly_fr(data, freqs, times, windows=None,
                     freq_window_kwargs=None, time_window_kwargs=None):
@@ -114,7 +116,7 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
         sk = np.fft.ifftshift(s, axes=axes)
         sk = np.fft.fftn(sk, axes=axes)
         sk = np.fft.fftshift(sk, axes=axes)
-    # np.savetxt('sk_save',sk)
+    np.savetxt('sk_save_2',sk)
     Nobs, Nfreqs = sk.shape
 
     if prior is None:
@@ -138,7 +140,7 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
         # print("Priors: ",prior[:,i])
         # print("Beta value: ",beta[i]," Alpha: ",alpha)
         if np.any(prior[:, i] > 0):
-            # print("If triggered")
+            print("If triggered")
 
             # The pdf for a log-uniform prior is proportional to 1 / x.
             # Multiplying the inverse gamma likelihood by this prior results
@@ -149,25 +151,28 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
             x[i] = invgamma.rvs(a=alpha+1) * beta[i]
             outside_prior = x[i] > prior[0, i] or x[i] < prior[1, i]
             if outside_prior:
-                # print("While loop started")
+                print("While loop started")
                 prior_iter=0
                 # Resample until we obtain a sample within the prior bounds
-                # x_resample=[]
+                x_resample=[]
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                     x[i] = invgamma.rvs(a=alpha+1) * beta[i]
                     prior_iter+=1
-                    # x_resample.append(x[i])
-                # np.savetxt('x_resample',x_resample)
+                    x_resample.append(x[i])
+                np.savetxt('x_resample_2',x_resample)
 
                 if prior_iter>=max_prior_iter:
                     #DIAG: artificially inflating priors
-                    prior[0,i]=1000
+                    prior[0,i]=99999999
                     prior[1,i]=0
                     prior_iter=0
-                    # print("Updating priors")
+                    print("Updating priors")
+                    x_resample=[]
                     while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                         x[i] = invgamma.rvs(a=alpha+1) * beta[i]
                         prior_iter+=1
+                        x_resample.append(x[i])
+                    np.savetxt('x_resample_2',x_resample)
                     if prior_iter>=max_prior_iter:
                         raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
@@ -428,12 +433,11 @@ def gibbs_step_fgmodes(
     vis,
     flags,
     signal_S,
-    # b_sys,
     fgmodes,
     Ninv,
     nm_list,
     h_j,
-    b_sys_past,
+    sys_model_past,
     freqs,
     lsts,
     B,
@@ -511,22 +515,17 @@ def gibbs_step_fgmodes(
     # Precompute 2D Fourier operator matrix
     fourier_op = utils.fourier_operator(Nfreqs)
 
-    # Precompute h_j systematics projection operator
-    # FIXME: Should put this outside this function and pass h_j in like we do with fgmodes; 
-    # h_j = sys.h_j_op(freqs=freqs, lsts=lsts, nm_list=nm_list)
-
     # Get matrices necessary for the GCR step
     matrices = build_matrices(Nparams, flags, signal_S, Ninv, fgmodes)
-    sys_model_past= h_j @ b_sys_past
-    sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs])
     # print("Past sys model done")
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
+
     cr = gcr_fgmodes(
-        vis=vis - sys_model_past, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
+        vis=vis, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
         map_estimate=map_estimate, verbose=verbose
     )
     #DIAG: saving the residuals for diagnostic test
-    # np.savetxt('residuals',vis-sys_model_past)
+    np.savetxt('sent_to_fgmodes_2',vis)
 
     # print("GCR fgmodes solved")
     # Extract separate signal and FG parts from the solution
@@ -534,12 +533,12 @@ def gibbs_step_fgmodes(
     fg_amps = cr[:, -fgmodes.shape[1] :]
     
     # Full model of data is sum of EoR (GCR) + FG model
-    model = signal_cr + fg_amps @ fgmodes.T  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
+    model = (np.eye(np.shape(sys_model_past)[0]+sys_model_past))*(signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
     # print("Model made")
     # 1a. Solve GCR equation to obtain estimate of systematic component
-    # pr.enable()
-    b_sys = sys_sol.gcr_sys(vis=vis - model, Ninv=Ninv, B=B, nm_list=nm_list, h_j=h_j, times=lsts, freqs=freqs)
-    # pr.disable()
+    pr.enable()
+    b_sys = sys_sol.gcr_sys(vis=vis/model,s=model, Ninv=Ninv, B=B, nm_list=nm_list, hj=h_j, times=lsts, freqs=freqs)
+    pr.disable()
 
     # ps = pstats.Stats(pr, stream=sys.stdout)
     # ps.strip_dirs()
@@ -548,12 +547,12 @@ def gibbs_step_fgmodes(
     # Update systematics model
     sys_model = h_j @ b_sys # Shape of flattened data
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs]) #Gives data-like model 
-
+    # print("Shape of product: {}".format((model*sys_model).shape))
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
     # i.e. as a sum of standard normal random variables.
     # FIXME: this will need to be changed to account for time-dependent
     # flags (i.e. when we have a different N per time).
-    chisq = np.abs(vis - model - sys_model)**2 * Ninv.diagonal()[None, :]
+    chisq = np.abs(vis - model*sys_model)**2 * Ninv.diagonal()[None, :]
     if verbose:
         chisq_mean = chisq[:, flags].mean()
         if chisq_mean > 10:
@@ -575,9 +574,9 @@ def gibbs_step_fgmodes(
     Sinv = np.linalg.inv(S_sample)
     ln_post = np.sum(np.diagonal(
         -(
-            (vis - model - sys_model)[:, flags].conj()
+            (vis - model*sys_model)[:, flags].conj()
             @ Ninv[flags][:, flags]
-            @ (vis - model - sys_model)[:, flags].T
+            @ (vis - model*sys_model)[:, flags].T
         )
         - (
             signal_cr[:, flags].conj()
@@ -709,8 +708,8 @@ def gibbs_sample_with_fg(
     signal_S = S_initial.copy()
 
     # Precompute h_j systematics projection operator
-    h_j = sys_sol.h_j_op(freqs=freqs, lsts=lsts, nm_list=nm_list)
-    # print("h_j operator created")
+    # FIXME: include path as arg in import file
+    h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list) #Selecting only 0th time
     # Loop over iterations
     if verbose:
         print("Iter     Time [s]    Info    |Ax - b|    Chisq    ln Post")
@@ -721,11 +720,19 @@ def gibbs_sample_with_fg(
         if verbose:
             print(f"{i+1:<9d}", end="")
         if i==0:
-            b_sys_past=np.loadtxt('b_sys_past',dtype=complex)
-            b_sys_past=np.array([[b] for b in b_sys_past])
+            # FIXME: include path as arg in import file
+            uvd.read('vis-eor-fgs.uvh5')
+            antpairpols = uvd.get_antpairpols()
+            clean_vis=uvd.get_data(antpairpols[0])
+            sys_model_past=vis/clean_vis
+            b_sys_past= sys_model_past[int(Ntimes/2),:]
+            sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs])
         else:
             b_sys_past=b_sys[i-1]
-        B_cov=(b_sys_past**2)*np.eye(len(b_sys_past))
+            sys_model_past = h_j @ b_sys_past
+            sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs])
+        B_cov=np.sqrt(b_sys_past)*np.eye(len(b_sys_past))
+        
         print("B_cov done. Shape: ", B_cov.shape)
         # Do Gibbs iteration
         signal_cr[i], signal_S, signal_ps[i], fg_amps[i], b_sys[i], chisq[i], ln_post[i]\
@@ -740,7 +747,7 @@ def gibbs_sample_with_fg(
                 nm_list=nm_list,
                 B=B_cov,
                 h_j=h_j,
-                b_sys_past=b_sys_past,
+                sys_model_past=sys_model_past,
                 ps_prior=ps_prior,
                 f0=None,
                 nproc=nproc,

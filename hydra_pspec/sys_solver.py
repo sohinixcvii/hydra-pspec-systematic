@@ -35,6 +35,8 @@ def fourier_mode_2d_udf(freqs, times, nfreq, ntime, freq0=None, time0=None,
     Construct a set of 2D Fourier modes from a list of wavenumber integers, 
     to form an incomplete set of 2D Fourier modes.
     """
+    # print("Modes: {}".format([ntime,nfreq]))
+    freqs=freqs*1e-9
     Lfreq = (freqs[1] - freqs[0]) * freqs.size
     Ltime = (times[1] - times[0]) * times.size
 
@@ -64,8 +66,11 @@ def fourier_mode_2d_udf(freqs, times, nfreq, ntime, freq0=None, time0=None,
     t2d, f2d = np.meshgrid(times - time0, freqs - freq0)
 
     # Calculate wavenumbers for each mode
-    kfreq = 2. * np.pi * nfreq / Lfreq # inverse freq. units
-    ktime = 2. * np.pi * ntime / Ltime # inverse time units
+    # kfreq = (2. * np.pi * nfreq / Lfreq)*1e-9 # inverse freq. units
+    # ktime = 2. * np.pi * ntime / Ltime # inverse time units
+    # FIXME: new kfreq test
+    kfreq =(2 * np.pi * nfreq)
+    ktime = (2 * np.pi * ntime)
 
     # Shape: (Nmodes, Nfreqs, Ntimes)
     basis_fns = np.exp(1.j \
@@ -252,31 +257,93 @@ def mat_solver_dum(data_s,noise_f,w,h_j,B):
     return b_pred, data_s, sqA, b_mat
 
 
-def gcr_sys(vis,Ninv,B,nm_list, times, freqs, h_j=None):
+def gcr_sys(vis,s,Ninv,B,nm_list, times, freqs, hj=None):
     '''
     Implements the GCR equation. Forms matrices and solves the system of equations to obtain the systematics vector b_sys. 
     Parameters:
 
-    vis: Visibilities shape=(len(lsts)*len(freqs))
-    Ninv: Inverse of noise covariance matrix shape=(len(frequencies)*len(LSTs),len(frequencies)*len(LSTs))
+    vis: Ratio of corrupted Visibilities and model shape=(len(lsts)*len(freqs))
+    Ninv: Inverse of noise covariance matrix shape=(len(frequencies),len(frequencies))
+    s: Model for eor and foreground visibilities
     w: complex gaussian vector with 0 mean and unit variance, shape=len(frequencies)*len(lsts)
-    h_j: h_j projection operator, complex, shape=len(frequencies)*len(lsts),len(nm_list)
+    hj: hj projection operator, complex, shape=len(frequencies)*len(lsts),len(nm_list)
     B: Prior covariance matrix (must be invertible and diagonal) shape=(len(mode_pairs),len(mode_pairs))
 
     Returns:
     b_sys: Complex vector of systematic amplitude predictions of shape=`(len(nm_list))`.
     '''
-    # t0=time.time()
-    if h_j is None:
-        h_j=h_j_op(freqs=freqs, lsts=times, nm_list=nm_list)
-    
-    B_i=inv_mat(B)
+    t0=time.time()
+    if hj is None:
+        hj=h_j_op(freqs=freqs, lsts=times, nm_list=nm_list)
 
-    vis_f=vis.flatten()
+    vis_f=vis.flatten().reshape([len(times)*len(freqs),1])
+    s=s.flatten().reshape([len(times)*len(freqs),1])
+    t1=time.time()
+    print("data and model formatted. Time: {}".format(t1-t0))
+    diag_el=Ninv[0,0]
+    Ninv=diag_el*np.ones(shape=len(times)*len(freqs), dtype=complex).reshape([len(times)*len(freqs),1])
+    Ninv_sqrt=np.sqrt(Ninv)
+    t2=time.time()
+    print("Noise cov and sqrt made. Time: {}".format(t2-t1))
+    w_re=np.random.normal(size=(len(times)*len(freqs),1),scale=1/np.sqrt(2),loc=0)
+    w_im=np.random.normal(size=(len(times)*len(freqs),1),scale=1/np.sqrt(2),loc=0)
+
+    prod_1=s.real.T @ (Ninv*s.real) + s.imag.T @ (Ninv*s.imag)
+    t3=time.time()
+    print("Product made. Time:  {}".format(t3-t2))
+
+    a11=hj.real.T @ (prod_1*hj.real) + hj.imag.T @ (prod_1 *hj.imag)
+    a12= -1*hj.real.T @ (prod_1*hj.imag) + hj.imag.T @ (prod_1*hj.real)
+    
+    t4=time.time()
+    print("Prod_1 calculated in time: {}".format(t4-t3))
+    
+    a_top=np.concatenate((a11,a12),axis=1)
+    a_bottom=np.concatenate((-1*a12,a11),axis=1)
+    A_mat=np.concatenate((a_top,a_bottom),axis=0)
+
+    t5=time.time()
+    print("A_mat made in time: {}".format(t5-t4))
+    
+    
+    b11= hj.real.T @ (s.real.T @ Ninv*vis_f.real)
+    b12= hj.imag.T @ (s.imag.T @ Ninv*vis_f.imag)
+    b13= hj.real.T @ (s.real.T @ Ninv_sqrt*w_re)
+    b14= hj.imag.T @ (s.imag.T @ Ninv_sqrt*w_im)
+    b111=b11+b12+b13+b14
+
+    t6=time.time()
+    print("B11 made: {}".format(t6-t5))
+
+    b21= -1*hj.imag.T @ (s.real.T @ Ninv*vis_f.real)
+    b22= hj.real.T @ (s.imag.T @ Ninv*vis_f.imag)
+    b23= -1*hj.imag.T @ (s.real.T @ Ninv_sqrt*w_re)
+    b24= hj.real.T @ (s.imag.T @ Ninv_sqrt*w_im)
+    b222= b21+b22+b23+b24
+
+    t7=time.time()
+    print("B222 made: {}".format(t7-t6))
+
+    b_mat=np.concatenate((b111,b222),axis=0)
+    t8=time.time()
+
+    print("b_mat made: {}".format(t8-t7))
+    b_sys,_=scipy.sparse.linalg.cg(A_mat,b_mat,tol=1e-10)
+
+    n_half=b_sys.shape[0]//2
+    b_real=b_sys[:n_half]
+    b_imag=b_sys[n_half:]
+    b_sys=b_real+1.j*b_imag
+
+    return b_sys
+
+
+
+
+'''
+    
     # t1=time.time()
-    w_re=np.random.normal(size=(len(vis_f),1),scale=1/np.sqrt(2),loc=0)
-    w_im=np.random.normal(size=(len(vis_f),1),scale=1/np.sqrt(2),loc=0)
-    w=w_re+w_im*1.j
+    
     # t2=time.time()
     #FIXME: temporary solution for the issue with noise matrix size. Given noise matrix is of shape (freq,freq). We need a diag matrix of shape (flattened_data,flattened_data)
     diag_el=Ninv[0,0]
@@ -331,3 +398,4 @@ def gcr_sys(vis,Ninv,B,nm_list, times, freqs, h_j=None):
     # print("Solution turned into complex vector in time: ",t9-t8)
     # print("Total func run time: ",t9-t0,"\n")
     return b_sys
+    '''
