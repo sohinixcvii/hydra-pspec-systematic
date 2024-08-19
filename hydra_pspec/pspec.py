@@ -140,7 +140,7 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
         # print("Priors: ",prior[:,i])
         # print("Beta value: ",beta[i]," Alpha: ",alpha)
         if np.any(prior[:, i] > 0):
-            print("If triggered")
+            # print("If triggered")
 
             # The pdf for a log-uniform prior is proportional to 1 / x.
             # Multiplying the inverse gamma likelihood by this prior results
@@ -151,28 +151,28 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
             x[i] = invgamma.rvs(a=alpha+1) * beta[i]
             outside_prior = x[i] > prior[0, i] or x[i] < prior[1, i]
             if outside_prior:
-                print("While loop started")
+                # print("While loop started")
                 prior_iter=0
                 # Resample until we obtain a sample within the prior bounds
-                x_resample=[]
+                # x_resample=[]
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                     x[i] = invgamma.rvs(a=alpha+1) * beta[i]
                     prior_iter+=1
-                    x_resample.append(x[i])
-                np.savetxt('x_resample_2',x_resample)
+                    # x_resample.append(x[i])
+                # np.savetxt('x_resample_2',x_resample)
 
                 if prior_iter>=max_prior_iter:
                     #DIAG: artificially inflating priors
-                    prior[0,i]=99999999
+                    prior[0,i]=1000
                     prior[1,i]=0
                     prior_iter=0
-                    print("Updating priors")
-                    x_resample=[]
+                    # print("Updating priors")
+                    # x_resample=[]
                     while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                         x[i] = invgamma.rvs(a=alpha+1) * beta[i]
                         prior_iter+=1
-                        x_resample.append(x[i])
-                    np.savetxt('x_resample_2',x_resample)
+                        # x_resample.append(x[i])
+                    # np.savetxt('x_resample_2',x_resample)
                     if prior_iter>=max_prior_iter:
                         raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
@@ -205,7 +205,7 @@ def sprior(signals, bins, factor):
 
 
 def gcr_fgmodes_1d(
-    idx, vis, w, matrices, fgmodes, f0=None, map_estimate=False, verbose=False,
+    idx, vis, y, w, matrices, fgmodes, f0=None, map_estimate=False, verbose=False,
     multiprocess_seed=912983
 ):
     """
@@ -292,7 +292,7 @@ def gcr_fgmodes_1d(
 
 
 def gcr_fgmodes(
-    vis, w, matrices, fgmodes, f0=None, nproc=1, map_estimate=False,
+    vis, y, w, matrices, fgmodes, f0=None, nproc=1, map_estimate=False,
     verbose=False
 ):
     """
@@ -344,6 +344,7 @@ def gcr_fgmodes(
             lambda idx: gcr_fgmodes_1d(
                 idx=idx,
                 vis=vis[idx],
+                y=y,
                 w=w,
                 matrices=matrices,
                 fgmodes=fgmodes,
@@ -377,7 +378,7 @@ def covariance_from_pspec(ps, fourier_op):
     return C
 
 
-def build_matrices(Nparams, flags, signal_S, Ninv, fgmodes):
+def build_matrices(Nparams, y, flags, signal_S, Ninv, fgmodes):
     """
     Calculate matrices and build A in Ax=b for the GCR step.
     
@@ -409,11 +410,13 @@ def build_matrices(Nparams, flags, signal_S, Ninv, fgmodes):
     matrices = [0, 0]
     matrices[0] = np.zeros((4, Nfreqs, Nfreqs), dtype=complex)
     matrices[1] = np.zeros((2, Nparams, Nparams), dtype=complex)
-
+    print("Shape of y: {}, y conj(): {}, Ninv: {}, and flags.T: {}".format(y.shape, y.conj().T.shape, Ninv.shape, flags.T.shape))
+    print("Shape of Ninv.diagonal()*y: {}".format((Ninv.diagonal()*y).shape))
     # Construct necessary operators for GCR
     matrices[0][0] = sp.linalg.sqrtm(signal_S)  # Sh
     matrices[0][1] = signal_S.copy()  # S
-    matrices[0][2] = flags.T * Ninv * flags  # Ni # FIXME
+    inner_prod= y.conj().T @ (Ninv.diagonal()*y)
+    matrices[0][2] = flags.T * (inner_prod) * flags  # Ni # FIXME
     matrices[0][3] = sp.linalg.sqrtm(matrices[0][2])  # Nih
 
     # Construct operator matrix
@@ -516,12 +519,12 @@ def gibbs_step_fgmodes(
     fourier_op = utils.fourier_operator(Nfreqs)
 
     # Get matrices necessary for the GCR step
-    matrices = build_matrices(Nparams, flags, signal_S, Ninv, fgmodes)
+    matrices = build_matrices(Nparams, sys_model_past, flags, signal_S, Ninv, fgmodes)
     # print("Past sys model done")
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
 
     cr = gcr_fgmodes(
-        vis=vis, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
+        vis=vis, y=sys_model_past, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
         map_estimate=map_estimate, verbose=verbose
     )
     #DIAG: saving the residuals for diagnostic test
@@ -531,9 +534,10 @@ def gibbs_step_fgmodes(
     # Extract separate signal and FG parts from the solution
     signal_cr = cr[:, : -fgmodes.shape[1]]
     fg_amps = cr[:, -fgmodes.shape[1] :]
-    
     # Full model of data is sum of EoR (GCR) + FG model
-    model = (np.eye(np.shape(sys_model_past)[0]+sys_model_past))*(signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
+    model = (signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
+    print(model.shape)
+    np.savetxt('model_2',vis)
     # print("Model made")
     # 1a. Solve GCR equation to obtain estimate of systematic component
     pr.enable()
