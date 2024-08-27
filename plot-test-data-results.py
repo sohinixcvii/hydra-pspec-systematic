@@ -19,7 +19,7 @@ parser.add_argument(
 parser.add_argument(
     "--res-dir",
     type=str,
-    default="./results-seed-7123689-Niter-1000/0-1/",
+    default="./results-seed-7123689-Niter-1000_v1/0-1/",
     help="Path to a directory containing outputs from hydra-pspec.  Defaults "
          "to './results-seed-7123689-Niter-1000/0-1/'."
 )
@@ -85,7 +85,7 @@ ax.plot(delays, dps_eor_true, "k:", label="True")
 ax.errorbar(
     delays,
     dps_eor_hp_pwm,
-    yerr=dps_eor_hp_err,
+    yerr=np.abs(dps_eor_hp_err),
     color="k",
     ls="",
     marker="o",
