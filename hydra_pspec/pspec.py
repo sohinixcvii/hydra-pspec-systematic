@@ -83,7 +83,7 @@ def data_dly_fr(data, freqs, times, windows=None,
 
     return data_fr_dly
 
-def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
+def sample_S(s=None, sk=None, prior=None, max_prior_iter=10):
     """
     Draw samples of the bandpowers of S, p(S|s). This assumes that the conditional
     distributions for the bandpowers are uncorrelated with one another, i.e. the Fourier-
@@ -146,20 +146,15 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
             if outside_prior:
                 prior_iter=0
                 # Resample until we obtain a sample within the prior bounds or attemps become > max_prior_iter
+                x_arr=[]
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                     x[i] = invgamma.rvs(a=alpha+1) * beta[i]
+                    x_arr.append(x[i])
                     prior_iter+=1
-
+                np.savetxt('test_files/x_resamples',x_arr)
                 if prior_iter>=max_prior_iter:
-                    #artificially inflating priors
-                    prior[0,i]=1000
-                    prior[1,i]=0
-                    prior_iter=0
-                    while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
-                        x[i] = invgamma.rvs(a=alpha+1) * beta[i]
-                        prior_iter+=1
-                    if prior_iter>=max_prior_iter:
-                        raise ValueError("Number of prior resamples exceeded max_prior_iter")
+                    print("Alpha: {}, Beta: {}".format(alpha,beta))
+                    raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
             x[i] = invgamma.rvs(a=alpha) * beta[i]
 
@@ -310,25 +305,26 @@ def gcr_fgmodes_1d_v1(idx, vis, w, Nparams, y, flags, signal_S, Ninv, fgmodes, N
     np.random.seed(seed)
 
     Nfreqs, Nmodes = fgmodes.shape
-    d = vis.reshape((1, max(Nfreqs, len(vis.T))))
-
-    A = np.zeros((Nparams, Nparams), dtype=complex)
-
-    inner_prod= y.conj().T @ (Ninv.diagonal()*y)
-    S = signal_S.copy()
-    Ni= flags.T * (inner_prod) * flags
-    Sh = sp.linalg.sqrtm(signal_S)
+    # d = vis.reshape((1, max(Nfreqs, len(vis.T))))
+    vis=vis.flatten()
+    y=y.flatten().reshape([Ntimes*Nfreqs,1])
     diag_el=Ninv[0,0]
-    Ninv=diag_el*np.ones(shape=Ntimes, dtype=complex).reshape([Ntimes,1])
+    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex).reshape([Ntimes*Nfreqs,1])
+    A = np.zeros((Nparams, Nparams), dtype=complex)
+    Ni= flags.T * (Ninv) * flags
+    inner_prod= (y.conj().T @ (Ni*y)).T
+    S = signal_S.copy()
+    
+    Sh = sp.linalg.sqrtm(signal_S)
     Ninv_sqrt=np.sqrt(Ninv)
 
-    Nih= y.conj().T @ Ninv_sqrt
-    Ai = np.linalg.pinv(A) # pseudo-inverse, to be used as a preconditioner
 
-    A[:Nfreqs, :Nfreqs] = np.eye(Nfreqs) + S @ Ni # I + S @ Ni
-    A[:Nfreqs, Nfreqs:] = S  @ Ni @ fgmodes
-    A[Nfreqs:, :Nfreqs] = fgmodes.T.conj() @ Ni
-    A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ Ni @ fgmodes
+    Nih= y.conj().T @ Ninv_sqrt
+    # print("Shape of inner_prod: ",inner_prod.shape)
+    A[:Nfreqs, :Nfreqs] = np.eye(Nfreqs) + S @ inner_prod # I + S @ Ni
+    A[:Nfreqs, Nfreqs:] = (S*inner_prod) @ fgmodes  
+    A[Nfreqs:, :Nfreqs] = fgmodes.T.conj() @ inner_prod
+    A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (inner_prod*fgmodes)
 
     if map_estimate:
         oma = np.zeros((Nfreqs, 1), dtype=complex)
@@ -338,11 +334,26 @@ def gcr_fgmodes_1d_v1(idx, vis, w, Nparams, y, flags, signal_S, Ninv, fgmodes, N
         omi, omj = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs, 1)
         omk, oml = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs, 1)
         oma, omb = (omi + 1.0j * omj) / 2**0.5, (omk + 1.0j * oml) / 2**0.5
-    # print("Shapes:\n S: {}\n Ni: {}\n w: {}\n d: {}\n Sh: {}\n oma: {}\n Nih: {}\n omb: {}\n fgmodes: {}\n".format(S.shape,Ni.shape,w.shape,d.shape,Sh.shape,oma.shape,Nih.shape,omb.shape,fgmodes.shape))
+    
+    Ai = np.linalg.pinv(A) # pseudo-inverse, to be used as a preconditioner
+
     # Construct RHS vector
     b = np.zeros((Nfreqs + Nmodes, 1), dtype=complex)
-    b[:Nfreqs] = S @ Ni @ (w * d).T + Sh @ oma + S @ (Nih*omb)
-    b[Nfreqs:] = fgmodes.T.conj() @ (Ni @ (w * d).T + (Nih*omb))
+    # print("Shapes: \nS:",S.shape,
+    #       "\ny.conj:",y.conj().shape,
+    #       "\nNi: ",Ni.shape,
+    #       "\nw:",w.shape,
+    #       "\nvis: ",vis.shape,
+    #       "\nSh: ",Sh.shape,
+    #       "\noma: ",oma.shape,
+    #       "\nomb: ",omb.shape,
+    #       "\nNih: ",Nih.shape,
+    #       "\nfgmodes.T.conj(): ",fgmodes.T.conj().shape,
+    #       "\nfgmodes: ",fgmodes.shape)
+    prod_2=(y.conj().T @ Ni).T*(w * vis).reshape(-1,1)
+    # print("Shapes of products: \nprod_2: ",(prod_2).shape)
+    b[:Nfreqs] = S @ (prod_2) + Sh @ oma + S @ (Nih*omb)
+    b[Nfreqs:] = fgmodes.T.conj() @ (prod_2 + (Nih*omb))
 
     # Run CG solver, preconditioned by M=Ai
     x0 = None
@@ -360,7 +371,7 @@ def gcr_fgmodes_1d_v1(idx, vis, w, Nparams, y, flags, signal_S, Ninv, fgmodes, N
 def gcr_fgmodes(
     vis, w, matrices, fgmodes, f0=None, nproc=1, map_estimate=False,
     verbose=False
-):
+): #Nparams, y, flags, signal_S, Ninv, Ntimes,
     """
     Perform the GCR step on all time samples, using parallelisation if
     possible.
@@ -405,6 +416,27 @@ def gcr_fgmodes(
     # Run GCR method on each time sample in parallel
     if verbose:
         st = time.time()
+    # with Pool(nproc) as pool:
+    #     samples, residuals, info = zip(*pool.map(
+    #         lambda idx: gcr_fgmodes_1d_v1(
+    #             idx=idx,
+    #             vis=vis[idx],
+    #             w=w,
+    #             # matrices=matrices,
+    #             Nparams=Nparams,
+    #             y=y,
+    #             flags=flags,
+    #             signal_S=signal_S,
+    #             Ninv=Ninv,
+    #             Ntimes=Ntimes,
+    #             fgmodes=fgmodes,
+    #             f0=f0,
+    #             map_estimate=map_estimate,
+    #             verbose=verbose
+    #         ),
+    #         idxs,
+    #     )
+    #     )
     with Pool(nproc) as pool:
         samples, residuals, info = zip(*pool.map(
             lambda idx: gcr_fgmodes_1d(
@@ -412,12 +444,6 @@ def gcr_fgmodes(
                 vis=vis[idx],
                 w=w,
                 matrices=matrices,
-                # Nparams=Nparams,
-                # y=y,
-                # flags=flags,
-                # signal_S=signal_S,
-                # Ninv=Ninv,
-                # Ntimes=Ntimes,
                 fgmodes=fgmodes,
                 f0=f0,
                 map_estimate=map_estimate,
@@ -501,8 +527,6 @@ def build_matrices(Nparams, y, flags, signal_S, Ninv, fgmodes):
     matrices[1][1] = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
     
     return matrices
-
-
 
 
 def gibbs_step_fgmodes(
@@ -598,24 +622,40 @@ def gibbs_step_fgmodes(
         vis=vis, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
         map_estimate=map_estimate, verbose=verbose
     )
-
+    t0=time.time()
+    
     # cr = gcr_fgmodes(
     #     vis=vis, w=flags, Nparams=Nparams, y=sys_model_past, flags=flags, signal_S=signal_S,
     #     Ninv=Ninv, Ntimes=Ntimes, fgmodes=fgmodes, f0=f0, nproc=nproc,
     #     map_estimate=map_estimate, verbose=verbose
     # )
-
+    t1=time.time()
+    print("Eor-FG GCR done in time: {}".format(t1-t0))
+    if not os.path.exists('test_files'):
+        os.makedirs('test_files')
+    np.save('test_files/eor_fg_data.npy',vis)
+    np.save('test_files/eor_fg_gain.npy',sys_model_past)
+    np.save('test_files/signal_S.npy',signal_S)
+    
     # Extract separate signal and FG parts from the solution
     signal_cr = cr[:, : -fgmodes.shape[1]]
     fg_amps = cr[:, -fgmodes.shape[1] :]
+    t2=time.time()
     
     # Full model of data is sum of EoR (GCR) + FG model
     model = (signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
-    
+    np.save('test_files/model_init.npy',model)
+    np.save('test_files/signal_cr.npy',signal_cr)
+    np.save('test_files/fg_amps.npy',fg_amps)
+    print("data saved and models made in time: {}".format(t2-t1))
+    t3=time.time()
     # 1a. Solve GCR equation to obtain estimate of systematic component
-    pr.enable()
+    # pr.enable()
     b_sys = sys_sol.gcr_sys(vis=(vis/model).flatten(),s=model, Ninv=Ninv, Bi=Bi, nm_list=nm_list, hj=h_j, times=lsts, freqs=freqs)
-    pr.disable()
+    # pr.disable()
+    t4=time.time()
+    print("SYS-GCR done in time: {}".format(t4-t3))
+    np.save('test_files/gcr_sys_data.npy',vis/model)
 
     # ps = pstats.Stats(pr, stream=sys.stdout)
     # ps.strip_dirs()
@@ -624,7 +664,10 @@ def gibbs_step_fgmodes(
     # Update systematics model
     sys_model = h_j @ b_sys # Shape of flattened data
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs]) #Gives data-like model 
-    
+    np.save('test_files/sys_model.npy',sys_model)
+    np.save('test_files/b_sys_est.npy',b_sys)
+    t5=time.time()
+    print("Data saved and models made in time: {}".format(t5-t4))
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
     # i.e. as a sum of standard normal random variables.
     # FIXME: this will need to be changed to account for time-dependent
@@ -639,7 +682,11 @@ def gibbs_step_fgmodes(
     
     # (2) Sample EoR signal power spectrum (and also convert to equivalent
     # covariance matrix sample)
+    t6=time.time()
+    print("Sampler starting after time: {}".format(t6-t5))
     ps_sample = sample_S(s=signal_cr, prior=ps_prior)
+    t7=time.time()
+    print("Sampling done in time: {}".format(t7-t6))
     # print("Nfreqs: ",Nfreqs)
     # The factor of 1/Nfreqs**2 here is an FFT normalization
     S_sample = covariance_from_pspec(ps_sample / Nfreqs**2, fourier_op)
@@ -802,6 +849,11 @@ def gibbs_sample_with_fg(
             clean_vis=uvd.get_data(antpairpols[0])
             sys_model_past=vis/clean_vis
             b_sys_past= sys_model_past[int(Ntimes/2),:]
+            if not os.path.exists('test_files'):
+                os.makedirs('test_files')
+                np.save('test_files/b_sys_past.npy',b_sys_past)
+            else:
+                np.save('test_files/b_sys_past.npy',b_sys_past)
             sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs])
         else:
             b_sys_past=b_sys[i-1]
