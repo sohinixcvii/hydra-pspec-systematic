@@ -83,7 +83,7 @@ def data_dly_fr(data, freqs, times, windows=None,
 
     return data_fr_dly
 
-def sample_S(s=None, sk=None, prior=None, max_prior_iter=10):
+def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
     """
     Draw samples of the bandpowers of S, p(S|s). This assumes that the conditional
     distributions for the bandpowers are uncorrelated with one another, i.e. the Fourier-
@@ -149,11 +149,11 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=10):
                 x_arr=[]
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                     x[i] = invgamma.rvs(a=alpha+1) * beta[i]
-                    x_arr.append(x[i])
+                    # x_arr.append(x[i])
                     prior_iter+=1
-                np.savetxt('test_files/x_resamples',x_arr)
+                # np.savetxt('test_files/x_resamples',x_arr)
                 if prior_iter>=max_prior_iter:
-                    print("Alpha: {}, Beta: {}".format(alpha,beta))
+                    # print("Alpha: {}, Beta: {}".format(alpha,beta))
                     raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
             x[i] = invgamma.rvs(a=alpha) * beta[i]
@@ -622,40 +622,40 @@ def gibbs_step_fgmodes(
         vis=vis, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
         map_estimate=map_estimate, verbose=verbose
     )
-    t0=time.time()
+    # t0=time.time()
     
     # cr = gcr_fgmodes(
     #     vis=vis, w=flags, Nparams=Nparams, y=sys_model_past, flags=flags, signal_S=signal_S,
     #     Ninv=Ninv, Ntimes=Ntimes, fgmodes=fgmodes, f0=f0, nproc=nproc,
     #     map_estimate=map_estimate, verbose=verbose
     # )
-    t1=time.time()
-    print("Eor-FG GCR done in time: {}".format(t1-t0))
+    # t1=time.time()
+    # print("Eor-FG GCR done in time: {}".format(t1-t0))
     if not os.path.exists('test_files'):
         os.makedirs('test_files')
-    np.save('test_files/eor_fg_data.npy',vis)
-    np.save('test_files/eor_fg_gain.npy',sys_model_past)
-    np.save('test_files/signal_S.npy',signal_S)
+    # np.save('test_files/eor_fg_data.npy',vis)
+    # np.save('test_files/eor_fg_gain.npy',sys_model_past)
+    # np.save('test_files/signal_S.npy',signal_S)
     
     # Extract separate signal and FG parts from the solution
     signal_cr = cr[:, : -fgmodes.shape[1]]
     fg_amps = cr[:, -fgmodes.shape[1] :]
-    t2=time.time()
+    # t2=time.time()
     
     # Full model of data is sum of EoR (GCR) + FG model
     model = (signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
-    np.save('test_files/model_init.npy',model)
-    np.save('test_files/signal_cr.npy',signal_cr)
-    np.save('test_files/fg_amps.npy',fg_amps)
-    print("data saved and models made in time: {}".format(t2-t1))
-    t3=time.time()
+    # np.save('test_files/model_init.npy',model)
+    # np.save('test_files/signal_cr.npy',signal_cr)
+    # np.save('test_files/fg_amps.npy',fg_amps)
+    # print("data saved and models made in time: {}".format(t2-t1))
+    # t3=time.time()
     # 1a. Solve GCR equation to obtain estimate of systematic component
     # pr.enable()
     b_sys = sys_sol.gcr_sys(vis=(vis/model).flatten(),s=model, Ninv=Ninv, Bi=Bi, nm_list=nm_list, hj=h_j, times=lsts, freqs=freqs)
     # pr.disable()
-    t4=time.time()
-    print("SYS-GCR done in time: {}".format(t4-t3))
-    np.save('test_files/gcr_sys_data.npy',vis/model)
+    # t4=time.time()
+    # print("SYS-GCR done in time: {}".format(t4-t3))
+    # np.save('test_files/gcr_sys_data.npy',vis/model)
 
     # ps = pstats.Stats(pr, stream=sys.stdout)
     # ps.strip_dirs()
@@ -664,10 +664,10 @@ def gibbs_step_fgmodes(
     # Update systematics model
     sys_model = h_j @ b_sys # Shape of flattened data
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs]) #Gives data-like model 
-    np.save('test_files/sys_model.npy',sys_model)
-    np.save('test_files/b_sys_est.npy',b_sys)
-    t5=time.time()
-    print("Data saved and models made in time: {}".format(t5-t4))
+    # np.save('test_files/sys_model.npy',sys_model)
+    # np.save('test_files/b_sys_est.npy',b_sys)
+    # t5=time.time()
+    # print("Data saved and models made in time: {}".format(t5-t4))
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
     # i.e. as a sum of standard normal random variables.
     # FIXME: this will need to be changed to account for time-dependent
@@ -682,11 +682,11 @@ def gibbs_step_fgmodes(
     
     # (2) Sample EoR signal power spectrum (and also convert to equivalent
     # covariance matrix sample)
-    t6=time.time()
-    print("Sampler starting after time: {}".format(t6-t5))
+    # t6=time.time()
+    # print("Sampler starting after time: {}".format(t6-t5))
     ps_sample = sample_S(s=signal_cr, prior=ps_prior)
-    t7=time.time()
-    print("Sampling done in time: {}".format(t7-t6))
+    # t7=time.time()
+    # print("Sampling done in time: {}".format(t7-t6))
     # print("Nfreqs: ",Nfreqs)
     # The factor of 1/Nfreqs**2 here is an FFT normalization
     S_sample = covariance_from_pspec(ps_sample / Nfreqs**2, fourier_op)

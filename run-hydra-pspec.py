@@ -153,7 +153,7 @@ parser.add_argument(
 parser.add_argument(
     "--n_ps_prior_bins",
     type=int,
-    default=3,
+    default=5,
     help="Sets the number of bins to the left and right of the delay=0 mode "
          "bound by the prior (set via --ps_prior_lo and --ps_prior_hi).  If "
          "n_ps_prior_bins is set to 3 (default), then 3 bins to the left and"
@@ -536,6 +536,8 @@ for data in list_of_baselines:
         print("Printing status messages for:")
         print(f"Rank:     {rank}")
         print(f"Baseline: {antpair}", end="\n\n")
+
+
 
 # pr.enable()
 # Run Gibbs sampler
