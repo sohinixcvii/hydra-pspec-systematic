@@ -196,12 +196,12 @@ def gcr_sys(vis,s,Ninv,Bi,nm_list, times, freqs, hj=None):
     if hj is None:
         hj=h_j_op(freqs=freqs, lsts=times, nm_list=nm_list)
 
-    vis_f=vis.reshape([len(times)*len(freqs),1])
-    s=s.flatten().reshape([len(times)*len(freqs),1])
+    vis_f=vis.reshape([len(times)*len(freqs),1],order='F')
+    s=s.flatten().reshape([len(times)*len(freqs),1],order='F')
     # t1=time.time()
     # print("data and model formatted. Time: {}".format(t1-t0))
     diag_el=Ninv[0,0]
-    Ninv=diag_el*np.ones(shape=len(times)*len(freqs), dtype=complex).reshape([len(times)*len(freqs),1])
+    Ninv=diag_el*np.ones(shape=len(times)*len(freqs), dtype=complex).reshape([len(times)*len(freqs),1],order='F')
     Ninv_sqrt=np.sqrt(Ninv)
     # t2=time.time()
     # print("Noise cov and sqrt made. Time: {}".format(t2-t1))
@@ -253,7 +253,7 @@ def gcr_sys(vis,s,Ninv,Bi,nm_list, times, freqs, hj=None):
     # t8=time.time()
 
     # print("b_mat made: {}".format(t8-t7))
-    b_sys,_=scipy.sparse.linalg.cg(A_mat,b_mat,tol=1e-10)
+    b_sys,_=scipy.sparse.linalg.cgs(A_mat,b_mat,rtol=1e-10)
 
     n_half=b_sys.shape[0]//2
     b_real=b_sys[:n_half]

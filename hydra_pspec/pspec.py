@@ -15,6 +15,7 @@ import uvtools
 from uvtools.dspec import gen_window
 from uvtools.utils import FFT
 from pyuvdata import UVData
+from tqdm import tqdm
 uvd=UVData()
 pr=cProfile.Profile()
 
@@ -145,15 +146,19 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
             
             if outside_prior:
                 prior_iter=0
-                # Resample until we obtain a sample within the prior bounds or attemps become > max_prior_iter
+                # Resample until we 
+                # obtain a sample within the prior bounds or attemps become > max_prior_iter
                 x_arr=[]
+                pbar=tqdm(total=max_prior_iter)
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                     x[i] = invgamma.rvs(a=alpha+1) * beta[i]
-                    # x_arr.append(x[i])
+                    x_arr.append(x[i])
                     prior_iter+=1
-                # np.savetxt('test_files/x_resamples',x_arr)
+                    pbar.update(1)
+                pbar.close()
+                np.savetxt('test_files/divergence_tests/x_resamples',x_arr)
                 if prior_iter>=max_prior_iter:
-                    # print("Alpha: {}, Beta: {}".format(alpha,beta))
+                    print("Alpha: {}, Beta: {}".format(alpha,beta))
                     raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
             x[i] = invgamma.rvs(a=alpha) * beta[i]
@@ -303,13 +308,13 @@ def gcr_fgmodes_1d_v1(idx, vis, w, Nparams, y, flags, signal_S, Ninv, fgmodes, N
     pid = current_process().pid
     seed = multiprocess_seed + pid*1000 + idx
     np.random.seed(seed)
-
+    print("Starting fgmodes GCR (modded) index: ",idx)
     Nfreqs, Nmodes = fgmodes.shape
     # d = vis.reshape((1, max(Nfreqs, len(vis.T))))
     vis=vis.flatten()
-    y=y.flatten().reshape([Ntimes*Nfreqs,1])
+    y=y.flatten().reshape([Ntimes*Nfreqs,1],order='F')
     diag_el=Ninv[0,0]
-    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex).reshape([Ntimes*Nfreqs,1])
+    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex).reshape([Ntimes*Nfreqs,1],order='F')
     A = np.zeros((Nparams, Nparams), dtype=complex)
     Ni= flags.T * (Ninv) * flags
     inner_prod= (y.conj().T @ (Ni*y)).T
@@ -368,6 +373,7 @@ def gcr_fgmodes_1d_v1(idx, vis, w, Nparams, y, flags, signal_S, Ninv, fgmodes, N
     # Return solution vector
     return xsoln, residual, info
 
+'''Original version'''
 def gcr_fgmodes(
     vis, w, matrices, fgmodes, f0=None, nproc=1, map_estimate=False,
     verbose=False
@@ -416,27 +422,6 @@ def gcr_fgmodes(
     # Run GCR method on each time sample in parallel
     if verbose:
         st = time.time()
-    # with Pool(nproc) as pool:
-    #     samples, residuals, info = zip(*pool.map(
-    #         lambda idx: gcr_fgmodes_1d_v1(
-    #             idx=idx,
-    #             vis=vis[idx],
-    #             w=w,
-    #             # matrices=matrices,
-    #             Nparams=Nparams,
-    #             y=y,
-    #             flags=flags,
-    #             signal_S=signal_S,
-    #             Ninv=Ninv,
-    #             Ntimes=Ntimes,
-    #             fgmodes=fgmodes,
-    #             f0=f0,
-    #             map_estimate=map_estimate,
-    #             verbose=verbose
-    #         ),
-    #         idxs,
-    #     )
-    #     )
     with Pool(nproc) as pool:
         samples, residuals, info = zip(*pool.map(
             lambda idx: gcr_fgmodes_1d(
@@ -463,6 +448,87 @@ def gcr_fgmodes(
         print(f"{residuals.mean():<12.2e}", end="")
     return samples
 
+'''Modified version'''
+# def gcr_fgmodes(
+#     vis, w, fgmodes, Nparams, y, flags, signal_S, Ninv, Ntimes, f0=None, nproc=1, map_estimate=False,
+#     verbose=False
+# ): 
+#     """
+#     Perform the GCR step on all time samples, using parallelisation if
+#     possible.
+
+#     Parameters:
+#         vis (array_like):
+#             Array of complex visibilities for a single baseline, of shape
+#             `(Ntimes, Nfreqs)`.
+#         w (array_like):
+#             Array of flags or weights (e.g. 1 for unflagged, 0 for flagged).
+#         matrices (array_like):
+#             Array containing precomputed matrices needed by the linear system.
+#         fgmodes (array_like):
+#             Foreground mode array, of shape (Nfreqs, Nmodes). This should be
+#             derived from a PCA decomposition of a model foreground covariance
+#             matrix or similar.
+#         fourier_op (array_like):
+#             Pre-computed Fourier operator.
+#         f0 (array_like):
+#             Initial guess for the foreground amplitudes, with shape `(Nmodes,)`.
+#         nproc (int):
+#             Number of processes to use for parallelised functions.
+#         map_estimate (bool):
+#             Provide the maximum a posteriori sample.
+#         verbose (bool):
+#             If True, output basic timing stats about each iteration.
+
+#     Returns:
+#         samples (array_like):
+#             Array of signal + foreground realisations for each time sample,
+#             of shape `(Ntimes, Nfreqs + Nmodes)`.
+#     """
+#     samples = np.zeros((vis.shape[0], vis.shape[1] + fgmodes.shape[1]), dtype=complex)
+#     if verbose:
+#         residuals = np.zeros(vis.shape[0], dtype=float)
+#         info = np.zeros(vis.shape[0], dtype=float)
+#     else:
+#         residuals = None
+#         info = None
+#     idxs = np.arange(vis.shape[0])
+
+#     # Run GCR method on each time sample in parallel
+#     if verbose:
+#         st = time.time()
+#     with Pool(nproc) as pool:
+#         samples, residuals, info = zip(*pool.map(
+#             lambda idx: gcr_fgmodes_1d_v1(
+#                 idx=idx,
+#                 vis=vis[idx],
+#                 w=w,
+#                 # matrices=matrices,
+#                 Nparams=Nparams,
+#                 y=y,
+#                 flags=flags,
+#                 signal_S=signal_S,
+#                 Ninv=Ninv,
+#                 Ntimes=Ntimes,
+#                 fgmodes=fgmodes,
+#                 f0=f0,
+#                 map_estimate=map_estimate,
+#                 verbose=verbose
+#             ),
+#             idxs,
+#         )
+#         )
+
+#     samples = np.array(samples).reshape((vis.shape[0], -1))
+#     residuals = np.array(residuals)
+#     info = np.array(info)
+
+#     # Return sample
+#     if verbose:
+#         print(f"{time.time() - st:<12.1f}", end="")
+#         print(f"{info.mean():<8.1f}", end="")
+#         print(f"{residuals.mean():<12.2e}", end="")
+#     return samples
 
 def covariance_from_pspec(ps, fourier_op):
     """
@@ -613,7 +679,7 @@ def gibbs_step_fgmodes(
     
     # Precompute 2D Fourier operator matrix
     fourier_op = utils.fourier_operator(Nfreqs)
-
+    '''Original version of gcr_fgmodes()'''
     # Get matrices necessary for the GCR step
     matrices = build_matrices(Nparams, sys_model_past, flags, signal_S, Ninv, fgmodes)
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
@@ -624,6 +690,7 @@ def gibbs_step_fgmodes(
     )
     # t0=time.time()
     
+    '''modified to account for systematics'''
     # cr = gcr_fgmodes(
     #     vis=vis, w=flags, Nparams=Nparams, y=sys_model_past, flags=flags, signal_S=signal_S,
     #     Ninv=Ninv, Ntimes=Ntimes, fgmodes=fgmodes, f0=f0, nproc=nproc,
@@ -663,9 +730,8 @@ def gibbs_step_fgmodes(
 
     # Update systematics model
     sys_model = h_j @ b_sys # Shape of flattened data
-    sys_model= np.reshape(sys_model,[Ntimes,Nfreqs]) #Gives data-like model 
-    # np.save('test_files/sys_model.npy',sys_model)
-    # np.save('test_files/b_sys_est.npy',b_sys)
+    sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
+    
     # t5=time.time()
     # print("Data saved and models made in time: {}".format(t5-t4))
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
@@ -844,21 +910,25 @@ def gibbs_sample_with_fg(
             print(f"{i+1:<9d}", end="")
         if i==0:
             # FIXME: include path as arg in import file
-            uvd.read('vis-eor-fgs.uvh5')
+            # uvd.read('gauss_1_data/vis-eor-ptsrc-gsm.uvh5')
+            uvd.read('gauss_1_data/vis-eor-ptsrc-gsm.uvh5')
             antpairpols = uvd.get_antpairpols()
             clean_vis=uvd.get_data(antpairpols[0])
+            print("Shape of uncorrupted visibilities:  ",clean_vis.shape)
+            print("Shape of working visibilities: ",vis.shape)
             sys_model_past=vis/clean_vis
+            print("sys_model shape: ", sys_model_past.shape)
             b_sys_past= sys_model_past[int(Ntimes/2),:]
             if not os.path.exists('test_files'):
                 os.makedirs('test_files')
                 np.save('test_files/b_sys_past.npy',b_sys_past)
             else:
-                np.save('test_files/b_sys_past.npy',b_sys_past)
-            sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs])
+                np.save('test_files/divergence_tests_airy_500/b_sys_past.npy',b_sys_past)
+            np.save('test_files/divergence_tests_airy_500/sys_model_original.npy',sys_model_past,allow_pickle=False)
         else:
             b_sys_past=b_sys[i-1]
             sys_model_past = h_j @ b_sys_past
-            sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs])
+            sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs],order='F')
         B_cov=np.sqrt(b_sys_past)*np.eye(len(b_sys_past))
         
         # Do Gibbs iteration
@@ -881,6 +951,15 @@ def gibbs_sample_with_fg(
                 map_estimate=map_estimate,
                 verbose=verbose
             )
+        
+        '''-----------Saving iteration results for diagnostics-----------'''
+        model = (signal_cr[i] + fg_amps[i] @ fgmodes.T)
+        np.save('test_files/divergence_tests_airy_500/model_'+str(i)+'.npy',model,allow_pickle=False)
+        sys_model = h_j @ b_sys[i] # Shape of flattened data
+        sys_model= np.reshape(sys_model,[Ntimes,Nfreqs], order='F')
+        np.save('test_files/divergence_tests_airy_500/sys_model_'+str(i)+'.npy',sys_model,allow_pickle=False)
+        '''--------------------------------------------------------------'''
+        
         if out_dir is not None and (i+1) % write_Niter == 0:
             # Write current set of samples to disk
             utils.write_numpy_files(
