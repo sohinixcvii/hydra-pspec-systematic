@@ -149,16 +149,16 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
                 # Resample until we 
                 # obtain a sample within the prior bounds or attemps become > max_prior_iter
                 x_arr=[]
-                pbar=tqdm(total=max_prior_iter)
+                # pbar=tqdm(total=max_prior_iter)
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
                     x[i] = invgamma.rvs(a=alpha+1) * beta[i]
                     x_arr.append(x[i])
                     prior_iter+=1
-                    pbar.update(1)
-                pbar.close()
+                    # pbar.update(1)
+                # pbar.close()
                 np.savetxt('test_files/divergence_tests/x_resamples',x_arr)
                 if prior_iter>=max_prior_iter:
-                    print("Alpha: {}, Beta: {}".format(alpha,beta))
+                    print("\nAlpha: {}, Beta: {}".format(alpha,beta[i]))
                     raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
             x[i] = invgamma.rvs(a=alpha) * beta[i]
@@ -216,50 +216,10 @@ def sprior(signals, bins, factor):
     return prior / (Nobs / 2 - 1)
 
 
-def gcr_fgmodes_1d(
-    idx, vis, w, matrices, fgmodes, f0=None, map_estimate=False, verbose=False,
-    multiprocess_seed=912983
-):
-    """
-    Perform the GCR step on a single time sample.
+'''Second modified version of GCR'''
+def gcr_fgmodes_1d_v2(idx, vis, w, Nparams, y, flags, E, Ninv, fgmodes, Eh, Nih, f0=None, map_estimate=False, verbose=False,
+    multiprocess_seed=912983):
 
-    Parameters:
-        idx (int):
-            Time index.  Used to generate a unique random seed for each process
-            if using `multiprocess.Pool` and multiple processes.
-        vis (array_like):
-            Array of complex visibilities for a single baseline, of shape
-            `(Ntimes, Nfreqs)`.
-        w (array_like):
-            Array of flags or weights (e.g. 1 for unflagged, 0 for flagged).
-        matrices (array_like):
-            Array containing precomputed matrices needed by the linear system.
-        fgmodes (array_like):
-            Foreground mode array, of shape (Nfreqs, Nmodes). This should be
-            derived from a PCA decomposition of a model foreground covariance
-            matrix or similar.
-        f0 (array_like):
-            Initial guess for the foreground amplitudes, with shape `(Nmodes,)`.
-        map_estimate (bool):
-            Provide the maximum a posteriori sample.
-        verbose (bool):
-            If True, output basic timing stats about each iteration.
-        multiprocess_seed (int):
-            Reference random seed used for all processes and time indices.
-            Used to generate a unique random seed for each spawned process and
-            each time index.  Defaults to 912983.
-
-    """
-    # If multiple process are spawned via `multiprocess.Pool`, each process
-    # inherits the random seed of the parent process.  We need to set a unique
-    # seed per process to avoid spurious correlations between GCRs at different
-    # time indices.  We can do so using the process ID (PID, unique per
-    # process) and time index (unique for each time).  For fewer than 1000
-    # processes, we can guarantee a unique random seed by summing the
-    # multiprocess_seed (a reference seed which is fixed for all processes and
-    # times), the PID*1000, and the time index.
-    # WARNING: if more than 1000 processes is every used this sum will not
-    # guarantee a unique seed for each process!
     pid = current_process().pid
     seed = multiprocess_seed + pid*1000 + idx
     np.random.seed(seed)
@@ -268,32 +228,41 @@ def gcr_fgmodes_1d(
     d = vis.reshape((1, max(Nfreqs, len(vis.T))))
 
     # Extract precomputed matrices needed by the linear system
-    Sh = matrices[0][0]
-    S = matrices[0][1]
-    Ni = matrices[0][2]
-    Nih = matrices[0][3]
-    A = matrices[1][0]
-    Ai = matrices[1][1]
+    A, Ni, Ai =build_matrices(Nparams, y, flags, E, Ninv, fgmodes)
 
     if map_estimate:
         oma = np.zeros((Nfreqs, 1), dtype=complex)
         omb = np.zeros((Nfreqs, 1), dtype=complex)
     else:
         # Unit complex Gaussian random realisation
-        omi, omj = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs, 1)
-        omk, oml = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs, 1)
+        omi, omj = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs,1)
+        omk, oml = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs,1)
         oma, omb = (omi + 1.0j * omj) / 2**0.5, (omk + 1.0j * oml) / 2**0.5
-
+    # print("Shapes: \nE:",E.shape,
+    #     #   "\ny.conj:",y.conj().shape,
+    #     "\nNi: ",Ni.shape,
+    #     "\nw:",w.shape,
+    #     "\nvis: ",vis.shape,
+    #     "\nEh: ",Eh.shape,
+    #     "\noma: ",oma.shape,
+    #     "\nomb: ",omb.shape,
+    #     "\nNih: ",Nih.shape,
+    #     "\nfgmodes.T.conj(): ",fgmodes.T.conj().shape,
+    #     "\nfgmodes: ",fgmodes.shape,
+    #     "\nA: ",A.shape,
+    #     "\nd: ",d.shape,
+    #     "\ny.conj() * Nih * omb: ",(y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb).shape,
+    #     "\nNi * w * d: ",(Ni[:,np.newaxis] * w[:,np.newaxis] * d.T).shape)
     # Construct RHS vector
     b = np.zeros((Nfreqs + Nmodes, 1), dtype=complex)
-    b[:Nfreqs] = S @ Ni @ (w * d).T + Sh @ oma + S @ Nih @ omb
-    b[Nfreqs:] = fgmodes.T.conj() @ (Ni @ (w * d).T + Nih @ omb)
+    b[:Nfreqs] = E @ (Ni[:,np.newaxis] * w[:,np.newaxis] * d.T) + Eh @ oma + E @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    b[Nfreqs:] = fgmodes.T.conj() @ (Ni[:,np.newaxis] * w[:,np.newaxis] * d.T) + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
 
     # Run CG solver, preconditioned by M=Ai
     x0 = None
     if f0 is not None:
         x0 = np.concatenate((np.zeros(Nfreqs, dtype=complex), f0))
-    xsoln, info = sp.sparse.linalg.cg(A, b, maxiter=int(1e5), x0=x0, M=Ai)
+    xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ai, rtol=1e-12) #maxiter=int(1e5)
     if verbose:
         residual = np.abs(A @ xsoln - b[:, 0]).mean()
     else:
@@ -302,82 +271,12 @@ def gcr_fgmodes_1d(
     # Return solution vector
     return xsoln, residual, info
 
-def gcr_fgmodes_1d_v1(idx, vis, w, Nparams, y, flags, signal_S, Ninv, fgmodes, Ntimes, f0=None, map_estimate=False, verbose=False,
-    multiprocess_seed=912983):
 
-    pid = current_process().pid
-    seed = multiprocess_seed + pid*1000 + idx
-    np.random.seed(seed)
-    print("Starting fgmodes GCR (modded) index: ",idx)
-    Nfreqs, Nmodes = fgmodes.shape
-    # d = vis.reshape((1, max(Nfreqs, len(vis.T))))
-    vis=vis.flatten()
-    y=y.flatten().reshape([Ntimes*Nfreqs,1],order='F')
-    diag_el=Ninv[0,0]
-    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex).reshape([Ntimes*Nfreqs,1],order='F')
-    A = np.zeros((Nparams, Nparams), dtype=complex)
-    Ni= flags.T * (Ninv) * flags
-    inner_prod= (y.conj().T @ (Ni*y)).T
-    S = signal_S.copy()
-    
-    Sh = sp.linalg.sqrtm(signal_S)
-    Ninv_sqrt=np.sqrt(Ninv)
-
-
-    Nih= y.conj().T @ Ninv_sqrt
-    # print("Shape of inner_prod: ",inner_prod.shape)
-    A[:Nfreqs, :Nfreqs] = np.eye(Nfreqs) + S @ inner_prod # I + S @ Ni
-    A[:Nfreqs, Nfreqs:] = (S*inner_prod) @ fgmodes  
-    A[Nfreqs:, :Nfreqs] = fgmodes.T.conj() @ inner_prod
-    A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (inner_prod*fgmodes)
-
-    if map_estimate:
-        oma = np.zeros((Nfreqs, 1), dtype=complex)
-        omb = np.zeros((Nfreqs, 1), dtype=complex)
-    else:
-        # Unit complex Gaussian random realisation
-        omi, omj = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs, 1)
-        omk, oml = np.random.randn(Nfreqs, 1), np.random.randn(Nfreqs, 1)
-        oma, omb = (omi + 1.0j * omj) / 2**0.5, (omk + 1.0j * oml) / 2**0.5
-    
-    Ai = np.linalg.pinv(A) # pseudo-inverse, to be used as a preconditioner
-
-    # Construct RHS vector
-    b = np.zeros((Nfreqs + Nmodes, 1), dtype=complex)
-    # print("Shapes: \nS:",S.shape,
-    #       "\ny.conj:",y.conj().shape,
-    #       "\nNi: ",Ni.shape,
-    #       "\nw:",w.shape,
-    #       "\nvis: ",vis.shape,
-    #       "\nSh: ",Sh.shape,
-    #       "\noma: ",oma.shape,
-    #       "\nomb: ",omb.shape,
-    #       "\nNih: ",Nih.shape,
-    #       "\nfgmodes.T.conj(): ",fgmodes.T.conj().shape,
-    #       "\nfgmodes: ",fgmodes.shape)
-    prod_2=(y.conj().T @ Ni).T*(w * vis).reshape(-1,1)
-    # print("Shapes of products: \nprod_2: ",(prod_2).shape)
-    b[:Nfreqs] = S @ (prod_2) + Sh @ oma + S @ (Nih*omb)
-    b[Nfreqs:] = fgmodes.T.conj() @ (prod_2 + (Nih*omb))
-
-    # Run CG solver, preconditioned by M=Ai
-    x0 = None
-    if f0 is not None:
-        x0 = np.concatenate((np.zeros(Nfreqs, dtype=complex), f0))
-    xsoln, info = sp.sparse.linalg.cg(A, b, maxiter=int(1e5), x0=x0, M=Ai)
-    if verbose:
-        residual = np.abs(A @ xsoln - b[:, 0]).mean()
-    else:
-        residual = None
-
-    # Return solution vector
-    return xsoln, residual, info
-
-'''Original version'''
+'''Second modified version'''
 def gcr_fgmodes(
-    vis, w, matrices, fgmodes, f0=None, nproc=1, map_estimate=False,
+    vis, w, fgmodes, Nparams, sys_model_past, flags, signal_S, Ninv, f0=None, nproc=1, map_estimate=False,
     verbose=False
-): #Nparams, y, flags, signal_S, Ninv, Ntimes,
+):
     """
     Perform the GCR step on all time samples, using parallelisation if
     possible.
@@ -418,19 +317,29 @@ def gcr_fgmodes(
         residuals = None
         info = None
     idxs = np.arange(vis.shape[0])
-
+    
+    #Time invariant calculations
+    Eh=sp.linalg.sqrtm(signal_S)  
+    Nih = np.sqrt(np.diag(Ninv))
+    
     # Run GCR method on each time sample in parallel
     if verbose:
         st = time.time()
     with Pool(nproc) as pool:
         samples, residuals, info = zip(*pool.map(
-            lambda idx: gcr_fgmodes_1d(
+            lambda idx: gcr_fgmodes_1d_v2(
                 idx=idx,
                 vis=vis[idx],
                 w=w,
-                matrices=matrices,
                 fgmodes=fgmodes,
                 f0=f0,
+                Nparams=Nparams,
+                y=sys_model_past[idx],
+                flags=flags,
+                E=signal_S,
+                Ninv=Ninv,
+                Eh=Eh,
+                Nih=Nih,
                 map_estimate=map_estimate,
                 verbose=verbose
             ),
@@ -448,88 +357,6 @@ def gcr_fgmodes(
         print(f"{residuals.mean():<12.2e}", end="")
     return samples
 
-'''Modified version'''
-# def gcr_fgmodes(
-#     vis, w, fgmodes, Nparams, y, flags, signal_S, Ninv, Ntimes, f0=None, nproc=1, map_estimate=False,
-#     verbose=False
-# ): 
-#     """
-#     Perform the GCR step on all time samples, using parallelisation if
-#     possible.
-
-#     Parameters:
-#         vis (array_like):
-#             Array of complex visibilities for a single baseline, of shape
-#             `(Ntimes, Nfreqs)`.
-#         w (array_like):
-#             Array of flags or weights (e.g. 1 for unflagged, 0 for flagged).
-#         matrices (array_like):
-#             Array containing precomputed matrices needed by the linear system.
-#         fgmodes (array_like):
-#             Foreground mode array, of shape (Nfreqs, Nmodes). This should be
-#             derived from a PCA decomposition of a model foreground covariance
-#             matrix or similar.
-#         fourier_op (array_like):
-#             Pre-computed Fourier operator.
-#         f0 (array_like):
-#             Initial guess for the foreground amplitudes, with shape `(Nmodes,)`.
-#         nproc (int):
-#             Number of processes to use for parallelised functions.
-#         map_estimate (bool):
-#             Provide the maximum a posteriori sample.
-#         verbose (bool):
-#             If True, output basic timing stats about each iteration.
-
-#     Returns:
-#         samples (array_like):
-#             Array of signal + foreground realisations for each time sample,
-#             of shape `(Ntimes, Nfreqs + Nmodes)`.
-#     """
-#     samples = np.zeros((vis.shape[0], vis.shape[1] + fgmodes.shape[1]), dtype=complex)
-#     if verbose:
-#         residuals = np.zeros(vis.shape[0], dtype=float)
-#         info = np.zeros(vis.shape[0], dtype=float)
-#     else:
-#         residuals = None
-#         info = None
-#     idxs = np.arange(vis.shape[0])
-
-#     # Run GCR method on each time sample in parallel
-#     if verbose:
-#         st = time.time()
-#     with Pool(nproc) as pool:
-#         samples, residuals, info = zip(*pool.map(
-#             lambda idx: gcr_fgmodes_1d_v1(
-#                 idx=idx,
-#                 vis=vis[idx],
-#                 w=w,
-#                 # matrices=matrices,
-#                 Nparams=Nparams,
-#                 y=y,
-#                 flags=flags,
-#                 signal_S=signal_S,
-#                 Ninv=Ninv,
-#                 Ntimes=Ntimes,
-#                 fgmodes=fgmodes,
-#                 f0=f0,
-#                 map_estimate=map_estimate,
-#                 verbose=verbose
-#             ),
-#             idxs,
-#         )
-#         )
-
-#     samples = np.array(samples).reshape((vis.shape[0], -1))
-#     residuals = np.array(residuals)
-#     info = np.array(info)
-
-#     # Return sample
-#     if verbose:
-#         print(f"{time.time() - st:<12.1f}", end="")
-#         print(f"{info.mean():<8.1f}", end="")
-#         print(f"{residuals.mean():<12.2e}", end="")
-#     return samples
-
 def covariance_from_pspec(ps, fourier_op):
     """
     Transform the sampled power spectrum into a frequency-frequency covariance
@@ -542,7 +369,7 @@ def covariance_from_pspec(ps, fourier_op):
     return C
 
 
-def build_matrices(Nparams, y, flags, signal_S, Ninv, fgmodes):
+def build_matrices(Nparams, y, flags, E, Ninv, fgmodes):
     """
     Calculate matrices and build A in Ax=b for the GCR step.
     
@@ -568,32 +395,72 @@ def build_matrices(Nparams, y, flags, signal_S, Ninv, fgmodes):
             List containing necessary GCR operators (`matrices[0]`) and the
             linear operator A in the GCR Ax=b solve step.
     """
-    Nfreqs = signal_S.shape[0]
+    Nfreqs = E.shape[0]
     
-    # Construct matrix structure
-    matrices = [0, 0]
-    matrices[0] = np.zeros((4, Nfreqs, Nfreqs), dtype=complex)
-    matrices[1] = np.zeros((2, Nparams, Nparams), dtype=complex)
-
     # Construct necessary operators for GCR
-    matrices[0][0] = sp.linalg.sqrtm(signal_S)  # Sh
-    matrices[0][1] = signal_S.copy()  # S
-    inner_prod= y.conj().T @ (Ninv.diagonal()*y)
-    matrices[0][2] = flags.T * (inner_prod) * flags  # Ni # FIXME
-    matrices[0][3] = sp.linalg.sqrtm(matrices[0][2])  # Nih
-
+    inner_prod= (y.conj().T * Ninv.diagonal() *  y)
+    Ni_flagged = flags.T * (inner_prod) * flags  # Ni # FIXME
+    # print("build_matrices shape check:\n y: {}\n flags: {}\n E: {}\n Ninv: {}\n fgmodes: {}\n Ni_flagged: {}".format(y.shape,flags.shape,E.shape,Ninv.shape,fgmodes.shape, Ni_flagged.shape))
+    
     # Construct operator matrix
     A = np.zeros((Nparams, Nparams), dtype=complex)
-    A[:Nfreqs, :Nfreqs] = np.eye(Nfreqs) + matrices[0][1] @ matrices[0][2]  # 1 + S @ Ni
-    A[:Nfreqs, Nfreqs:] = matrices[0][1] @ matrices[0][2] @ fgmodes
-    A[Nfreqs:, :Nfreqs] = fgmodes.T.conj() @ matrices[0][2]
-    A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ matrices[0][2] @ fgmodes
+    # print(np.shape(A[Nfreqs:, Nfreqs:]))
+    A[:Nfreqs, :Nfreqs] = np.eye(Nfreqs) + E * Ni_flagged[:,np.newaxis]  # 1 + E @ y.dag * Ni * y
+    A[:Nfreqs, Nfreqs:] = E @ (Ni_flagged[:,np.newaxis] * fgmodes)
+    A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T
+    A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes)
 
-    matrices[1][0] = A
-    matrices[1][1] = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
+    A_pinv = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
     
-    return matrices
+    return A, Ni_flagged, A_pinv
 
+'''Version 2 of systematics-as-gain build_matrices() after doing the maths'''
+# def build_matrices(Nparams, y, flags, E, Ninv, fgmodes):
+#     """
+#     Calculate matrices and build A in Ax=b for the GCR step.
+    
+#     Parameters:
+#         Nparams (int):
+#             Number of model parameters.
+#         flags (array_like):
+#             Array of flags (1 for unflagged, 0 for flagged), with shape 
+#             `(Nfreqs,)`.
+#         signal_S (array_like):
+#             Current value of the EoR signal frequency-frequency covariance.
+#         Ninv (array_like):
+#             Inverse noise variance matrix. This can either have shape
+#             `(Ntimes, Nfreqs, Nfreqs)`, one for each time, or can be a common
+#             one for all times with shape `(Nfreqs, Nfreqs)`.
+#         fgmodes (array_like):
+#             Foreground mode array, of shape (Nfreqs, Nmodes). This should be
+#             derived from a PCA decomposition of a model foreground covariance
+#             matrix or similar.
+    
+#     Returns:
+#         matrices (list of array_like):
+#             List containing necessary GCR operators (`matrices[0]`) and the
+#             linear operator A in the GCR Ax=b solve step.
+#     """
+#     Nfreqs = E.shape[0]
+    
+#     E_inv=np.linalg.inv(E) #FIXME
+#     # G_inv=np.linalg.inv(fgmodes) #FIXME
+    
+#     # Construct necessary operators for GCR
+#     inner_prod= (y.conj().T * Ninv.diagonal() *  y)
+#     Ni_flagged = flags.T * (inner_prod) * flags  # Ni # FIXME
+#     print("build_matrices shape check:\n y: {}\n flags: {}\n signal_S: {}\n Ninv: {}\n fgmodes: {}\n Ni_flagged: {}".format(y.shape,flags.shape,E.shape,Ninv.shape,fgmodes.shape, Ni_flagged.shape))
+    
+#     # Construct operator matrix
+#     A = np.zeros((Nparams, Nparams), dtype=complex)
+#     A[:Nfreqs, :Nfreqs] = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + Ni_flagged  # A11: y.dag E^-1 y + y.dag * Ni * y
+#     A[:Nfreqs, Nfreqs:] = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
+#     A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
+#     A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
+
+#     A_pinv = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
+    
+#     return A, Ni_flagged, A_pinv
 
 def gibbs_step_fgmodes(
     vis,
@@ -603,7 +470,7 @@ def gibbs_step_fgmodes(
     Ninv,
     nm_list,
     h_j,
-    sys_model_past,
+    b_sys_past,
     freqs,
     lsts,
     Bi,
@@ -676,27 +543,31 @@ def gibbs_step_fgmodes(
     Nmodes = fgmodes.shape[1]
     Nparams = Nfreqs + Nmodes
     assert flags.shape == (Nfreqs,), "`flags` array must have shape (Nfreqs,)"
+
+    '''--------Saving vis for diagnostics-------------'''
+    np.save('test_files/divergence_tests_airy_v2_1/vis.npy',vis,allow_pickle=False)
+    '''------------------------------------------------------'''
     
     # Precompute 2D Fourier operator matrix
     fourier_op = utils.fourier_operator(Nfreqs)
-    '''Original version of gcr_fgmodes()'''
+
+    sys_model_past= h_j @ b_sys_past
+    sys_model_past= np.reshape(sys_model_past,[Ntimes,Nfreqs],order='F')
+    
+    '''--------Saving sys model for diagnostics-------------'''
+    np.save('test_files/divergence_tests_airy_v2_1/sys_model_past.npy',sys_model_past,allow_pickle=False)
+    '''------------------------------------------------------'''
+    
     # Get matrices necessary for the GCR step
-    matrices = build_matrices(Nparams, sys_model_past, flags, signal_S, Ninv, fgmodes)
+    
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
 
     cr = gcr_fgmodes(
-        vis=vis, w=flags, matrices=matrices, fgmodes=fgmodes, f0=f0, nproc=nproc,
-        map_estimate=map_estimate, verbose=verbose
+        vis=vis, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
+    verbose=verbose
     )
     # t0=time.time()
     
-    '''modified to account for systematics'''
-    # cr = gcr_fgmodes(
-    #     vis=vis, w=flags, Nparams=Nparams, y=sys_model_past, flags=flags, signal_S=signal_S,
-    #     Ninv=Ninv, Ntimes=Ntimes, fgmodes=fgmodes, f0=f0, nproc=nproc,
-    #     map_estimate=map_estimate, verbose=verbose
-    # )
-    # t1=time.time()
     # print("Eor-FG GCR done in time: {}".format(t1-t0))
     if not os.path.exists('test_files'):
         os.makedirs('test_files')
@@ -710,7 +581,7 @@ def gibbs_step_fgmodes(
     # t2=time.time()
     
     # Full model of data is sum of EoR (GCR) + FG model
-    model = (signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes)
+    model = (signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes) # sky model
     # np.save('test_files/model_init.npy',model)
     # np.save('test_files/signal_cr.npy',signal_cr)
     # np.save('test_files/fg_amps.npy',fg_amps)
@@ -718,7 +589,12 @@ def gibbs_step_fgmodes(
     # t3=time.time()
     # 1a. Solve GCR equation to obtain estimate of systematic component
     # pr.enable()
-    b_sys = sys_sol.gcr_sys(vis=(vis/model).flatten(),s=model, Ninv=Ninv, Bi=Bi, nm_list=nm_list, hj=h_j, times=lsts, freqs=freqs)
+    
+    '''-------Saving sky model for diagnostics-------'''
+    np.save('test_files/divergence_tests_airy_v2_1/sky_model_0.npy',model,allow_pickle=False)
+    '''----------------------------------------------'''
+    '''second version of sys GCR'''
+    b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis,Ninv=Ninv,s=model.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose)
     # pr.disable()
     # t4=time.time()
     # print("SYS-GCR done in time: {}".format(t4-t3))
@@ -732,19 +608,23 @@ def gibbs_step_fgmodes(
     sys_model = h_j @ b_sys # Shape of flattened data
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
     
+    '''--------Saving sys model for diagnostics-------------'''
+    np.save('test_files/divergence_tests_airy_v2_1/sys_model_0.npy',sys_model,allow_pickle=False)
+    '''------------------------------------------------------'''
+    
     # t5=time.time()
     # print("Data saved and models made in time: {}".format(t5-t4))
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
     # i.e. as a sum of standard normal random variables.
     # FIXME: this will need to be changed to account for time-dependent
     # flags (i.e. when we have a different N per time).
-    chisq = np.abs(vis - model*sys_model)**2 * Ninv.diagonal()[None, :]
+    chisq = np.abs(vis - sys_model*model)**2 * Ninv.diagonal()[None, :]
     if verbose:
         chisq_mean = chisq[:, flags].mean()
         if chisq_mean > 10:
-            print(f"{chisq_mean:<9.1e}", end="")
+            print(f"{chisq_mean:<9.1e}", end=" ")
         else:
-            print(f"{chisq_mean:<9.3f}", end="")
+            print(f"{chisq_mean:<9.3f}", end=" ")
     
     # (2) Sample EoR signal power spectrum (and also convert to equivalent
     # covariance matrix sample)
@@ -900,8 +780,8 @@ def gibbs_sample_with_fg(
     h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list) #Selecting only 0th time
     # Loop over iterations
     if verbose:
-        print("Iter     Time [s]    Info    |Ax - b|    Chisq    ln Post")
-        print("-----    --------    ----    --------    -----    -------")
+        print("Iter     Time [s]    Info    |Ax - b|    Chisq    Time sys (s)    Sys Info    Sys |Ax-b|    ln Post")
+        print("-----    --------    ----    --------    -----    ------------    --------    ----------    -------")
 
     for i in range(Niter):
         # print("Iteration: ",i)
@@ -911,25 +791,21 @@ def gibbs_sample_with_fg(
         if i==0:
             # FIXME: include path as arg in import file
             # uvd.read('gauss_1_data/vis-eor-ptsrc-gsm.uvh5')
-            uvd.read('gauss_1_data/vis-eor-ptsrc-gsm.uvh5')
+            uvd=UVData()
+            uvd.read('test_data/vis-eor-fgs.uvh5')
             antpairpols = uvd.get_antpairpols()
-            clean_vis=uvd.get_data(antpairpols[0])
-            print("Shape of uncorrupted visibilities:  ",clean_vis.shape)
-            print("Shape of working visibilities: ",vis.shape)
-            sys_model_past=vis/clean_vis
-            print("sys_model shape: ", sys_model_past.shape)
-            b_sys_past= sys_model_past[int(Ntimes/2),:]
+            clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
+            b_sys_past= (vis/clean_vis)[int(Nfreqs/2),:]
             if not os.path.exists('test_files'):
                 os.makedirs('test_files')
                 np.save('test_files/b_sys_past.npy',b_sys_past)
             else:
-                np.save('test_files/divergence_tests_airy_500/b_sys_past.npy',b_sys_past)
-            np.save('test_files/divergence_tests_airy_500/sys_model_original.npy',sys_model_past,allow_pickle=False)
+                np.save('test_files/divergence_tests_airy_v2_1/b_sys_past.npy',b_sys_past,allow_pickle=False)
+                np.save('test_files/divergence_tests_airy_v2_1/h_j_op.npy',h_j,allow_pickle=False)
+            # B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past))
         else:
             b_sys_past=b_sys[i-1]
-            sys_model_past = h_j @ b_sys_past
-            sys_model_past=np.reshape(sys_model_past,[Ntimes,Nfreqs],order='F')
-        B_cov=np.sqrt(b_sys_past)*np.eye(len(b_sys_past))
+        B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past)) #Uncomment this to sample for B
         
         # Do Gibbs iteration
         signal_cr[i], signal_S, signal_ps[i], fg_amps[i], b_sys[i], chisq[i], ln_post[i]\
@@ -942,9 +818,9 @@ def gibbs_sample_with_fg(
                 freqs=freqs,
                 lsts=lsts,
                 nm_list=nm_list,
-                Bi=B_cov,
+                Bi=B_cov_inv,
                 h_j=h_j,
-                sys_model_past=sys_model_past,
+                b_sys_past=b_sys_past,
                 ps_prior=ps_prior,
                 f0=None,
                 nproc=nproc,

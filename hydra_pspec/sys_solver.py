@@ -261,3 +261,73 @@ def gcr_sys(vis,s,Ninv,Bi,nm_list, times, freqs, hj=None):
     b_sys=b_real+1.j*b_imag
 
     return b_sys
+
+def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
+    '''
+    Parameters:
+    Binv:
+
+    d:
+        data (visbilities) flattened to a vector of shape (Nfreqs*Ntimes,)
+    N:
+        Noise covariance simplified to a vector with shape (Nfreqs*Ntimes,)
+    s:
+        sky model flattened to a vector of shape (Nfreqs*Ntimes,)
+    H:
+        Systematics basis functions with shape (Nfreqs*Ntimes,Nmodes)
+    '''
+    # d_exp=np.concatenate((d.real,d.imag)) #.reshape([-1,1])
+    # Bi_diag=0.01
+    if verbose:
+        st=time.time()
+    Ntimes, Nfreqs= d.shape
+    d=d.flatten(order='F')
+    Binv_diag=np.diag(Binv)
+    Binv_exp=np.concatenate((Binv_diag.real,Binv_diag.imag))*np.eye(2*np.shape(Binv)[0])
+    diag_el=Ninv[0,0]
+    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex)  #.reshape([len(d),],order='F')
+    Nih=np.sqrt(Ninv)
+    # print("Shape of realified matrices: \n d: {},\n Binv: {}\n Nih: {}\n s.real: {}\n s.imag: {}".format(d.shape,Binv_exp.shape,Nih.shape,s.real.shape,s.imag.shape))
+    
+    '''eq A'''
+    Nih_sre=Nih*s.real
+    Nih_sim=Nih*s.imag
+    
+    # print("Shape check 2: \n Nih_sre: {}\n Nih_sim: {}".format(Nih_sre.shape,Nih_sim.shape))
+    
+    m11= Nih_sre[:,np.newaxis]*H.real - Nih_sim[:,np.newaxis]*H.imag
+    m12= -1 *Nih_sre[:,np.newaxis]*H.imag - Nih_sim[:,np.newaxis]*H.real
+    # m21= Nih_sim[:,np.newaxis]*H.real + Nih_sre[:,np.newaxis]*H.imag
+    # m22= -Nih_sim[:,np.newaxis]*H.imag + Nih_sre[:,np.newaxis]*H.real
+    
+
+    nume=np.concatenate((m11,m12),axis=1)
+    denom=np.concatenate((-1*m12,m11),axis=1)
+    M_tilde=np.concatenate((nume,denom),axis=0)
+    # print("Component shape checks: \n m11: {}\n m12: {}\n M_tilde: {}".format(m11.shape,m12.shape,M_tilde.shape))    
+    A_mat= Binv_exp + M_tilde.conj().T @ M_tilde # Try einsum as an alternative
+    
+    nih_dre=Nih*d.real
+    nih_dim=Nih*d.imag
+    
+    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim
+    denom= m12.T @ nih_dre + m11.T @ nih_dim
+    
+    b_mat= np.concatenate((nume, denom), axis=0)
+    
+    # print("Shape checks: \n A_mat: {}\n b_mat: {}".format(A_mat.shape,b_mat.shape))
+    
+    if b_sys_past is not None:
+        x0=np.concatenate([b_sys_past.real,b_sys_past.imag],axis=0)
+    b_sys,info=scipy.sparse.linalg.cgs(A_mat,b_mat,tol=1e-12)
+    residuals = np.abs(A_mat @ b_sys - b_mat).mean()
+    b_sys=b_sys[int(len(b_sys)/2):] + 1.j* b_sys[:int(len(b_sys)/2)]
+
+    if verbose:
+        print(f"{time.time() - st:<12.1f}", end="")
+        print(f"{info:<8.1f}", end="")
+        print(f"{residuals:<12.2e}", end="")
+    
+    
+    return b_sys
+    
