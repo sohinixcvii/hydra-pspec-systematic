@@ -9,7 +9,9 @@ Guide to directories:
 	5. test_data: contains data for airy beam case
 	6. test_files: Iteration level outputs for running diagnostics (divergence_tests folders are just results to run diagnostics on "divergence(and non-convergence) of sampler" problem)
 	7. systematics_as_gain.pdf : pdf doc explaining the treatment we have implemented in this version of the sampler and why we did what we did
-
+	8. GCR_equations_derivation-systematics_as_gain.pdf : pdf with derivation of the GCR equations after accounting for systematic gain in EoR-FG
+	9. GCR_equation_test.ipynb: tests numerical stability of GCR equations outside of the hydra-pspec system
+	10: systematic_as_gain_test_pt1.ipynb tests numerical stability of systematic GCR equation outside of hydra-pspec system
 
 Other callouts:
 	1. Please use the plot_results.ipynb notebook to plot the delay power spectra results. The .py scripts may throw errors.
