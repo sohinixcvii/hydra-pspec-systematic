@@ -19,6 +19,7 @@ from tqdm import tqdm
 uvd=UVData()
 pr=cProfile.Profile()
 
+sample_c = 0
 def data_dly_fr(data, freqs, times, windows=None,
                     freq_window_kwargs=None, time_window_kwargs=None):
     """
@@ -84,7 +85,7 @@ def data_dly_fr(data, freqs, times, windows=None,
 
     return data_fr_dly
 
-def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
+def sample_S(s=None, sk=None, prior=None, max_prior_iter=100000):
     """
     Draw samples of the bandpowers of S, p(S|s). This assumes that the conditional
     distributions for the bandpowers are uncorrelated with one another, i.e. the Fourier-
@@ -148,6 +149,7 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
                 prior_iter=0
                 # Resample until we 
                 # obtain a sample within the prior bounds or attemps become > max_prior_iter
+                print("iteration: ", i)
                 x_arr=[]
                 # pbar=tqdm(total=max_prior_iter)
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
@@ -156,7 +158,8 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=1000):
                     prior_iter+=1
                     # pbar.update(1)
                 # pbar.close()
-                np.savetxt('test_files/divergence_tests/x_resamples',x_arr)
+                print("Last sample: ",x_arr[-1])
+                np.savetxt('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests/x_resamples',x_arr)
                 if prior_iter>=max_prior_iter:
                     print("\nAlpha: {}, Beta: {}".format(alpha,beta[i]))
                     raise ValueError("Number of prior resamples exceeded max_prior_iter")
@@ -217,8 +220,8 @@ def sprior(signals, bins, factor):
 
 
 '''Second modified version of GCR'''
-def gcr_fgmodes_1d_v2(idx, vis, w, Nparams, y, flags, E, Ninv, fgmodes, Eh, Nih, f0=None, map_estimate=False, verbose=False,
-    multiprocess_seed=912983):
+def gcr_fgmodes_1d_v2(idx, vis, w, Eh, Nih, Nparams, y, flags, E, Ninv, fgmodes, f0=None, map_estimate=False, verbose=False,
+    multiprocess_seed=912983): # Eh, Nih, --> only needed when we activate omegas
 
     pid = current_process().pid
     seed = multiprocess_seed + pid*1000 + idx
@@ -228,7 +231,7 @@ def gcr_fgmodes_1d_v2(idx, vis, w, Nparams, y, flags, E, Ninv, fgmodes, Eh, Nih,
     d = vis.reshape((1, max(Nfreqs, len(vis.T))))
 
     # Extract precomputed matrices needed by the linear system
-    A, Ni, Ai =build_matrices(Nparams, y, flags, E, Ninv, fgmodes)
+    A, Ni, Ai = build_matrices(Nparams, y, flags, E, Ninv, fgmodes)
 
     if map_estimate:
         oma = np.zeros((Nfreqs, 1), dtype=complex)
@@ -255,22 +258,31 @@ def gcr_fgmodes_1d_v2(idx, vis, w, Nparams, y, flags, E, Ninv, fgmodes, Eh, Nih,
     #     "\nNi * w * d: ",(Ni[:,np.newaxis] * w[:,np.newaxis] * d.T).shape)
     # Construct RHS vector
     b = np.zeros((Nfreqs + Nmodes, 1), dtype=complex)
-    b[:Nfreqs] = E @ (Ni[:,np.newaxis] * w[:,np.newaxis] * d.T) + Eh @ oma + E @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    b[Nfreqs:] = fgmodes.T.conj() @ (Ni[:,np.newaxis] * w[:,np.newaxis] * d.T) + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    # # b[:Nfreqs] = (y.conj() * Ni * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    # b[:Nfreqs] = (Ni * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    # # b[Nfreqs:] = fgmodes.T.conj() @ (y.conj() * Ni * d).T + fgmodes.T.conj() @ (Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    # b[Nfreqs:] = fgmodes.T.conj() @ (Ni * d).T + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    
+    # b[:Nfreqs] = (y.conj() * Ni * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    b[:Nfreqs] = (Ni * d).T + Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    # b[Nfreqs:] = fgmodes.T.conj() @ (y.conj() * Ni * d).T + fgmodes.T.conj() @ (Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    b[Nfreqs:] = fgmodes.T.conj() @ (Ni * d).T + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
 
     # Run CG solver, preconditioned by M=Ai
     x0 = None
     if f0 is not None:
-        x0 = np.concatenate((np.zeros(Nfreqs, dtype=complex), f0))
-    xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ai, rtol=1e-12) #maxiter=int(1e5)
+        x0 = np.concatenate((np.zeros(Nparams, dtype=complex), f0))
+    
+    xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ai) #maxiter=int(1e5) , rtol=1e-12 , x0=x0, M=Ai
     if verbose:
         residual = np.abs(A @ xsoln - b[:, 0]).mean()
+        # x0=np.concatenate([d.T.real,d.T.imag],axis=0)
+        # residual_og = np.abs(A @ x0 - b[:, 0]).mean()
     else:
         residual = None
 
     # Return solution vector
-    return xsoln, residual, info
-
+    return xsoln, residual,  info  #residual_og, b
 
 '''Second modified version'''
 def gcr_fgmodes(
@@ -310,23 +322,23 @@ def gcr_fgmodes(
             of shape `(Ntimes, Nfreqs + Nmodes)`.
     """
     samples = np.zeros((vis.shape[0], vis.shape[1] + fgmodes.shape[1]), dtype=complex)
+    # print("Shape of samples array: ",samples.shape)
     if verbose:
         residuals = np.zeros(vis.shape[0], dtype=float)
+        # residuals_og = np.zeros(vis.shape[0], dtype=float)
         info = np.zeros(vis.shape[0], dtype=float)
     else:
         residuals = None
         info = None
     idxs = np.arange(vis.shape[0])
-    
     #Time invariant calculations
     Eh=sp.linalg.sqrtm(signal_S)  
     Nih = np.sqrt(np.diag(Ninv))
-    
     # Run GCR method on each time sample in parallel
     if verbose:
         st = time.time()
     with Pool(nproc) as pool:
-        samples, residuals, info = zip(*pool.map(
+        samples, residuals,  info = zip(*pool.map(
             lambda idx: gcr_fgmodes_1d_v2(
                 idx=idx,
                 vis=vis[idx],
@@ -338,7 +350,7 @@ def gcr_fgmodes(
                 flags=flags,
                 E=signal_S,
                 Ninv=Ninv,
-                Eh=Eh,
+                Eh=Eh, #use when omegas are active
                 Nih=Nih,
                 map_estimate=map_estimate,
                 verbose=verbose
@@ -347,14 +359,16 @@ def gcr_fgmodes(
         )
         )
     samples = np.array(samples).reshape((vis.shape[0], -1))
+    # print(samples.shape)
     residuals = np.array(residuals)
     info = np.array(info)
-
+    # residuals_og= np.array(residuals_og)
     # Return sample
     if verbose:
         print(f"{time.time() - st:<12.1f}", end="")
         print(f"{info.mean():<8.1f}", end="")
         print(f"{residuals.mean():<12.2e}", end="")
+        # print(f"{residuals_og.mean():<12.2e}", end="")
     return samples
 
 def covariance_from_pspec(ps, fourier_op):
@@ -397,70 +411,36 @@ def build_matrices(Nparams, y, flags, E, Ninv, fgmodes):
     """
     Nfreqs = E.shape[0]
     
+    E_inv=np.linalg.inv(E) #FIXME   
+    # G_inv=np.linalg.inv(fgmodes) #FIXME
+    
     # Construct necessary operators for GCR
     inner_prod= (y.conj().T * Ninv.diagonal() *  y)
     Ni_flagged = flags.T * (inner_prod) * flags  # Ni # FIXME
-    # print("build_matrices shape check:\n y: {}\n flags: {}\n E: {}\n Ninv: {}\n fgmodes: {}\n Ni_flagged: {}".format(y.shape,flags.shape,E.shape,Ninv.shape,fgmodes.shape, Ni_flagged.shape))
+    
+    # a11 = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + Ni_flagged  # A11: y.dag E^-1 y + y.dag * Ni * y
+    # a12 = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
+    # a21 = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
+    # a22 = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
+    
+    # print("A11: {}\nA12: {}\nA21: {}\nA22: {}".format(a11.shape,a12.shape,a21.shape,a22.shape))
     
     # Construct operator matrix
     A = np.zeros((Nparams, Nparams), dtype=complex)
-    # print(np.shape(A[Nfreqs:, Nfreqs:]))
-    A[:Nfreqs, :Nfreqs] = np.eye(Nfreqs) + E * Ni_flagged[:,np.newaxis]  # 1 + E @ y.dag * Ni * y
-    A[:Nfreqs, Nfreqs:] = E @ (Ni_flagged[:,np.newaxis] * fgmodes)
-    A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T
-    A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes)
+    # A[:Nfreqs, :Nfreqs] = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + np.diag(Ni_flagged)  # A11: y.dag E^-1 y + y.dag * Ni * y
+    # A[:Nfreqs, :Nfreqs] = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + np.diag(Ni_flagged)  # A11: y.dag E^-1 y + y.dag * Ni * y
+    # A[:Nfreqs, Nfreqs:] = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
+    # A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
+    # A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
 
+    A[:Nfreqs, :Nfreqs] = E_inv + np.diag(Ni_flagged)  # A11: y.dag E^-1 y + y.dag * Ni * y
+    A[:Nfreqs, Nfreqs:] = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
+    A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
+    A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
     A_pinv = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
     
+    
     return A, Ni_flagged, A_pinv
-
-'''Version 2 of systematics-as-gain build_matrices() after doing the maths'''
-# def build_matrices(Nparams, y, flags, E, Ninv, fgmodes):
-#     """
-#     Calculate matrices and build A in Ax=b for the GCR step.
-    
-#     Parameters:
-#         Nparams (int):
-#             Number of model parameters.
-#         flags (array_like):
-#             Array of flags (1 for unflagged, 0 for flagged), with shape 
-#             `(Nfreqs,)`.
-#         signal_S (array_like):
-#             Current value of the EoR signal frequency-frequency covariance.
-#         Ninv (array_like):
-#             Inverse noise variance matrix. This can either have shape
-#             `(Ntimes, Nfreqs, Nfreqs)`, one for each time, or can be a common
-#             one for all times with shape `(Nfreqs, Nfreqs)`.
-#         fgmodes (array_like):
-#             Foreground mode array, of shape (Nfreqs, Nmodes). This should be
-#             derived from a PCA decomposition of a model foreground covariance
-#             matrix or similar.
-    
-#     Returns:
-#         matrices (list of array_like):
-#             List containing necessary GCR operators (`matrices[0]`) and the
-#             linear operator A in the GCR Ax=b solve step.
-#     """
-#     Nfreqs = E.shape[0]
-    
-#     E_inv=np.linalg.inv(E) #FIXME
-#     # G_inv=np.linalg.inv(fgmodes) #FIXME
-    
-#     # Construct necessary operators for GCR
-#     inner_prod= (y.conj().T * Ninv.diagonal() *  y)
-#     Ni_flagged = flags.T * (inner_prod) * flags  # Ni # FIXME
-#     print("build_matrices shape check:\n y: {}\n flags: {}\n signal_S: {}\n Ninv: {}\n fgmodes: {}\n Ni_flagged: {}".format(y.shape,flags.shape,E.shape,Ninv.shape,fgmodes.shape, Ni_flagged.shape))
-    
-#     # Construct operator matrix
-#     A = np.zeros((Nparams, Nparams), dtype=complex)
-#     A[:Nfreqs, :Nfreqs] = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + Ni_flagged  # A11: y.dag E^-1 y + y.dag * Ni * y
-#     A[:Nfreqs, Nfreqs:] = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
-#     A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
-#     A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
-
-#     A_pinv = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
-    
-#     return A, Ni_flagged, A_pinv
 
 def gibbs_step_fgmodes(
     vis,
@@ -471,6 +451,7 @@ def gibbs_step_fgmodes(
     nm_list,
     h_j,
     b_sys_past,
+    sys_model_past,
     freqs,
     lsts,
     Bi,
@@ -545,17 +526,15 @@ def gibbs_step_fgmodes(
     assert flags.shape == (Nfreqs,), "`flags` array must have shape (Nfreqs,)"
 
     '''--------Saving vis for diagnostics-------------'''
-    np.save('test_files/divergence_tests_airy_v2_1/vis.npy',vis,allow_pickle=False)
+    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/vis.npy',vis,allow_pickle=False)
     '''------------------------------------------------------'''
     
     # Precompute 2D Fourier operator matrix
     fourier_op = utils.fourier_operator(Nfreqs)
 
-    sys_model_past= h_j @ b_sys_past
-    sys_model_past= np.reshape(sys_model_past,[Ntimes,Nfreqs],order='F')
     
     '''--------Saving sys model for diagnostics-------------'''
-    np.save('test_files/divergence_tests_airy_v2_1/sys_model_past.npy',sys_model_past,allow_pickle=False)
+    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_past.npy',sys_model_past,allow_pickle=False)
     '''------------------------------------------------------'''
     
     # Get matrices necessary for the GCR step
@@ -563,14 +542,14 @@ def gibbs_step_fgmodes(
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
 
     cr = gcr_fgmodes(
-        vis=vis, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
+        vis=vis/sys_model_past, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
     verbose=verbose
     )
     # t0=time.time()
     
     # print("Eor-FG GCR done in time: {}".format(t1-t0))
-    if not os.path.exists('test_files'):
-        os.makedirs('test_files')
+    if not os.path.exists('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files'):
+        os.makedirs('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files')
     # np.save('test_files/eor_fg_data.npy',vis)
     # np.save('test_files/eor_fg_gain.npy',sys_model_past)
     # np.save('test_files/signal_S.npy',signal_S)
@@ -591,10 +570,21 @@ def gibbs_step_fgmodes(
     # pr.enable()
     
     '''-------Saving sky model for diagnostics-------'''
-    np.save('test_files/divergence_tests_airy_v2_1/sky_model_0.npy',model,allow_pickle=False)
+    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sky_model_0.npy',model,allow_pickle=False)
+    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/eor-gcr.npy',signal_cr,allow_pickle=False)
+    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/fg-amps.npy',fg_amps @ fgmodes.T,allow_pickle=False)
     '''----------------------------------------------'''
     '''second version of sys GCR'''
-    b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis,Ninv=Ninv,s=model.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose)
+    
+    '''This block is for only when we are informing gcr_sys with true solution'''
+    #FIXME: remove the following file-loading from code
+    uvd=UVData()
+    uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
+    antpairpols = uvd.get_antpairpols()    
+    uvd = utils.form_pseudo_stokes_vis(uvd)
+    clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
+
+    b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis,Ninv=Ninv,s=clean_vis.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose)
     # pr.disable()
     # t4=time.time()
     # print("SYS-GCR done in time: {}".format(t4-t3))
@@ -609,7 +599,7 @@ def gibbs_step_fgmodes(
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
     
     '''--------Saving sys model for diagnostics-------------'''
-    np.save('test_files/divergence_tests_airy_v2_1/sys_model_0.npy',sys_model,allow_pickle=False)
+    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_0.npy',sys_model,allow_pickle=False)
     '''------------------------------------------------------'''
     
     # t5=time.time()
@@ -630,7 +620,10 @@ def gibbs_step_fgmodes(
     # covariance matrix sample)
     # t6=time.time()
     # print("Sampler starting after time: {}".format(t6-t5))
-    ps_sample = sample_S(s=signal_cr, prior=ps_prior)
+    # ps_sample = sample_S(s=signal_cr, prior=ps_prior)
+    
+    #FIXME: Fix prior bounds to properly sample PS
+    ps_sample = np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/ps_sample.npy',allow_pickle=False)
     # t7=time.time()
     # print("Sampling done in time: {}".format(t7-t6))
     # print("Nfreqs: ",Nfreqs)
@@ -792,19 +785,22 @@ def gibbs_sample_with_fg(
             # FIXME: include path as arg in import file
             # uvd.read('gauss_1_data/vis-eor-ptsrc-gsm.uvh5')
             uvd=UVData()
-            uvd.read('test_data/vis-eor-fgs.uvh5')
+            uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
+            # uvd=utils.form_pseudo_stokes_vis(uvd)
             antpairpols = uvd.get_antpairpols()
             clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
-            b_sys_past= (vis/clean_vis)[int(Nfreqs/2),:]
-            if not os.path.exists('test_files'):
-                os.makedirs('test_files')
-                np.save('test_files/b_sys_past.npy',b_sys_past)
+            sys_model_past= (vis/clean_vis)
+            b_sys_past = sys_model_past[int(Nfreqs/2),:]
+            if not os.path.exists('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files'):
+                os.makedirs('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files')
+                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/sys_model_past.npy',sys_model_past)
             else:
-                np.save('test_files/divergence_tests_airy_v2_1/b_sys_past.npy',b_sys_past,allow_pickle=False)
-                np.save('test_files/divergence_tests_airy_v2_1/h_j_op.npy',h_j,allow_pickle=False)
+                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_past.npy',sys_model_past,allow_pickle=False)
+                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/h_j_op.npy',h_j,allow_pickle=False)
             # B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past))
         else:
             b_sys_past=b_sys[i-1]
+            sys_model_past = (h_j @ b_sys_past).reshape([Ntimes,Nfreqs],order='F')
         B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past)) #Uncomment this to sample for B
         
         # Do Gibbs iteration
@@ -821,6 +817,7 @@ def gibbs_sample_with_fg(
                 Bi=B_cov_inv,
                 h_j=h_j,
                 b_sys_past=b_sys_past,
+                sys_model_past=sys_model_past,
                 ps_prior=ps_prior,
                 f0=None,
                 nproc=nproc,
@@ -830,10 +827,10 @@ def gibbs_sample_with_fg(
         
         '''-----------Saving iteration results for diagnostics-----------'''
         model = (signal_cr[i] + fg_amps[i] @ fgmodes.T)
-        np.save('test_files/divergence_tests_airy_500/model_'+str(i)+'.npy',model,allow_pickle=False)
+        np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_500/model_'+str(i)+'.npy',model,allow_pickle=False)
         sys_model = h_j @ b_sys[i] # Shape of flattened data
         sys_model= np.reshape(sys_model,[Ntimes,Nfreqs], order='F')
-        np.save('test_files/divergence_tests_airy_500/sys_model_'+str(i)+'.npy',sys_model,allow_pickle=False)
+        np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_500/sys_model_'+str(i)+'.npy',sys_model,allow_pickle=False)
         '''--------------------------------------------------------------'''
         
         if out_dir is not None and (i+1) % write_Niter == 0:
