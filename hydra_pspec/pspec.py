@@ -544,7 +544,7 @@ def gibbs_step_fgmodes(
     cr = gcr_fgmodes(
         vis=vis/sys_model_past, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
     verbose=verbose
-    )
+    )   #FIXME: Sending just vis in here makes this step absorb the systematics as well. 
     # t0=time.time()
     
     # print("Eor-FG GCR done in time: {}".format(t1-t0))
@@ -578,13 +578,13 @@ def gibbs_step_fgmodes(
     
     '''This block is for only when we are informing gcr_sys with true solution'''
     #FIXME: remove the following file-loading from code
-    uvd=UVData()
-    uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
-    antpairpols = uvd.get_antpairpols()    
-    uvd = utils.form_pseudo_stokes_vis(uvd)
-    clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
+    # uvd=UVData()
+    # uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
+    # antpairpols = uvd.get_antpairpols()    
+    # uvd = utils.form_pseudo_stokes_vis(uvd)
+    # clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
 
-    b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis,Ninv=Ninv,s=clean_vis.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose)
+    b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis,Ninv=Ninv,s=model.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose)
     # pr.disable()
     # t4=time.time()
     # print("SYS-GCR done in time: {}".format(t4-t3))
@@ -598,6 +598,7 @@ def gibbs_step_fgmodes(
     sys_model = h_j @ b_sys # Shape of flattened data
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
     
+    model = sys_model * model
     '''--------Saving sys model for diagnostics-------------'''
     np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_0.npy',sys_model,allow_pickle=False)
     '''------------------------------------------------------'''
@@ -608,7 +609,7 @@ def gibbs_step_fgmodes(
     # i.e. as a sum of standard normal random variables.
     # FIXME: this will need to be changed to account for time-dependent
     # flags (i.e. when we have a different N per time).
-    chisq = np.abs(vis - sys_model*model)**2 * Ninv.diagonal()[None, :]
+    chisq = np.abs(vis - model)**2 * Ninv.diagonal()[None, :]
     if verbose:
         chisq_mean = chisq[:, flags].mean()
         if chisq_mean > 10:
@@ -639,9 +640,9 @@ def gibbs_step_fgmodes(
     Sinv = np.linalg.inv(S_sample)
     ln_post = np.sum(np.diagonal(
         -(
-            (vis - model*sys_model)[:, flags].conj()
+            (vis - model)[:, flags].conj()
             @ Ninv[flags][:, flags]
-            @ (vis - model*sys_model)[:, flags].T
+            @ (vis - model)[:, flags].T
         )
         - (
             signal_cr[:, flags].conj()
