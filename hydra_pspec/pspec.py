@@ -256,18 +256,13 @@ def gcr_fgmodes_1d_v2(idx, vis, w, Eh, Nih, Nparams, y, flags, E, Ninv, fgmodes,
     #     "\nd: ",d.shape,
     #     "\ny.conj() * Nih * omb: ",(y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb).shape,
     #     "\nNi * w * d: ",(Ni[:,np.newaxis] * w[:,np.newaxis] * d.T).shape)
+    
     # Construct RHS vector
     b = np.zeros((Nfreqs + Nmodes, 1), dtype=complex)
-    # # b[:Nfreqs] = (y.conj() * Ni * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    # b[:Nfreqs] = (Ni * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    # # b[Nfreqs:] = fgmodes.T.conj() @ (y.conj() * Ni * d).T + fgmodes.T.conj() @ (Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    # b[Nfreqs:] = fgmodes.T.conj() @ (Ni * d).T + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
     
-    # b[:Nfreqs] = (y.conj() * Ni * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    b[:Nfreqs] = (Ni * d).T + Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) #+ y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    # b[Nfreqs:] = fgmodes.T.conj() @ (y.conj() * Ni * d).T + fgmodes.T.conj() @ (Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    b[Nfreqs:] = fgmodes.T.conj() @ (Ni * d).T + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb) # + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-
+    b[:Nfreqs] = (y.conj() * Ninv.diagonal() * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    b[Nfreqs:] = fgmodes.T.conj() @ (y.conj() * Ninv.diagonal() * d).T + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    
     # Run CG solver, preconditioned by M=Ai
     x0 = None
     if f0 is not None:
@@ -418,27 +413,14 @@ def build_matrices(Nparams, y, flags, E, Ninv, fgmodes):
     inner_prod= (y.conj().T * Ninv.diagonal() *  y)
     Ni_flagged = flags.T * (inner_prod) * flags  # Ni # FIXME
     
-    # a11 = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + Ni_flagged  # A11: y.dag E^-1 y + y.dag * Ni * y
-    # a12 = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
-    # a21 = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
-    # a22 = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
-    
-    # print("A11: {}\nA12: {}\nA21: {}\nA22: {}".format(a11.shape,a12.shape,a21.shape,a22.shape))
-    
     # Construct operator matrix
     A = np.zeros((Nparams, Nparams), dtype=complex)
-    # A[:Nfreqs, :Nfreqs] = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + np.diag(Ni_flagged)  # A11: y.dag E^-1 y + y.dag * Ni * y
-    # A[:Nfreqs, :Nfreqs] = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + np.diag(Ni_flagged)  # A11: y.dag E^-1 y + y.dag * Ni * y
-    # A[:Nfreqs, Nfreqs:] = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
-    # A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
-    # A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
-
-    A[:Nfreqs, :Nfreqs] = E_inv + np.diag(Ni_flagged)  # A11: y.dag E^-1 y + y.dag * Ni * y
+    A[:Nfreqs, :Nfreqs] = y.conj()[:,np.newaxis] * E_inv * y[:,np.newaxis] + np.diag(Ni_flagged)  # A11: y.dag E^-1 y + y.dag * Ni * y
     A[:Nfreqs, Nfreqs:] = Ni_flagged[:,np.newaxis] * fgmodes # A12: y.dag * Ni * y * G
     A[Nfreqs:, :Nfreqs] = (fgmodes.conj() * Ni_flagged[:,np.newaxis]).T #A21: G.dag * y.dag * Ni * y
     A[Nfreqs:, Nfreqs:] = fgmodes.T.conj() @ (Ni_flagged[:,np.newaxis] * fgmodes) #A22: y.dag * G^-1 *y + G.dag * y.dag * Ni * y * G (y.conj()[:,np.newaxis] * G_inv * y[:,np.newaxis] + )
+
     A_pinv = np.linalg.pinv(A)  # pseudo-inverse, to be used as a preconditioner
-    
     
     return A, Ni_flagged, A_pinv
 
@@ -542,7 +524,7 @@ def gibbs_step_fgmodes(
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
 
     cr = gcr_fgmodes(
-        vis=vis/sys_model_past, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
+        vis=vis, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
     verbose=verbose
     )   #FIXME: Sending just vis in here makes this step absorb the systematics as well. 
     # t0=time.time()
