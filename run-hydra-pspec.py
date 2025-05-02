@@ -170,7 +170,7 @@ parser.add_argument(
 parser.add_argument(
     "--ps_prior_hi",
     type=float,
-    default=0.0,
+    default=5.0e+10,
     help="Sets the upper bound of the prior on the delay power spectrum. "
          "Defaults to 0 which corresponds to no upper bound."
 )
@@ -525,9 +525,10 @@ for data in list_of_baselines:
             Nfreqs//2 - args.n_ps_prior_bins,
             Nfreqs//2 + args.n_ps_prior_bins + 1
         )
-        ps_prior[0, ps_prior_inds] = args.ps_prior_hi
-        ps_prior[1, ps_prior_inds] = args.ps_prior_lo
-
+        # ps_prior[0, ps_prior_inds] = args.ps_prior_hi
+        # ps_prior[1, ps_prior_inds] = args.ps_prior_lo
+        ps_prior[0, ps_prior_inds] = 5e+10
+        ps_prior[1, ps_prior_inds] = 0
     if rank == 0:
         verbose = args.verbose
     else:
@@ -537,8 +538,10 @@ for data in list_of_baselines:
         print(f"Rank:     {rank}")
         print(f"Baseline: {antpair}", end="\n\n")
 
+# FIXME: Saving priors
+np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/ps_prior.npy',ps_prior,allow_pickle=False)
 
-
+# print("Prior: ", ps_prior)
 # pr.enable()
 # Run Gibbs sampler
 signal_cr, signal_S, signal_ps, fg_amps, b_sys, chisq, ln_post = \

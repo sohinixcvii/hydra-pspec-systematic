@@ -4,6 +4,7 @@ from scipy.stats import mode
 from scipy.signal.windows import blackmanharris as BH
 from scipy.stats import invgamma
 from scipy.optimize import minimize, Bounds
+from scipy.interpolate import interp1d
 from . import sys_solver as sys_sol
 from multiprocess import Pool, current_process
 from . import utils
@@ -85,29 +86,48 @@ def data_dly_fr(data, freqs, times, windows=None,
 
     return data_fr_dly
 
-def sample_S(s=None, sk=None, prior=None, max_prior_iter=100000):
+def draw_icdf_samples(alpha, beta, x):
+    cdf = invgamma.rvs(a=alpha+1) * beta
+    cdf -= cdf.min() # shift minimum down to zero
+    if cdf.max()==0.0:
+        cdf /= (cdf.max()+1e-5) # rescale maximum to 1
+    else:
+        cdf /= cdf.max() # rescale maximum to 1
+
+    # Remove duplicate entries in cdf so interpolator can work properly; 
+    # tends to result in sample points near the extrema of the prior bounds anyway
+    cdf_unique, idxs_unique = np.unique(cdf, return_index=True)
+    u = np.random.uniform(high=cdf.max())
+    # Draw sample using inversion sampling method
+    # Note: Must use linear interpolation to avoid very bad interpolation results
+    return interp1d(cdf_unique, x[idxs_unique], kind='linear')(u)
+
+def sample_S(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
     """
-    Draw samples of the bandpowers of S, p(S|s). This assumes that the conditional
-    distributions for the bandpowers are uncorrelated with one another, i.e. the Fourier-
-    space covariance S has no off-diagonals.
+    Draw a sample from an inverse gamma distribution using inversion 
+    sampling between uniform prior bounds.
+    
+    This works by sampling the cdf of the inverse gamma distribution 
+    on a (logarithmic) grid and then interpolating to convert a uniform 
+    random draw into a random draw with the correct pdf.
 
     Parameters:
-        s (array_like):
-            A set of real-space samples of the field, of shape
-            `(Ntimes, Nfreq)`. This will be Fourier transformed.
-            Alternatively, `sk` can be given.
+        alpha (float):
+            Inverse gamma alpha parameter.
+        beta (float):
+            Inverse gamma beta (scale) parameter.
+        prior_min (float):
+            Minimum of the prior range.
+        prior_max (float):
+            Maximum of the prior range.
+        ngrid (int):
+            Number of sample points to use for interpolator.
 
-        sk (array_like):
-            A set of Fourier-space samples of the field, of shape
-            `(Ntimes, Nfreq)`.  The monopole is expected to be at the center
-            of the frequency axis, i.e. the frequency axis has been fftshifted.
-
-        prior (array_like):
-            Array of delta function prior values, used to set certain modes to a
-            fixed value.
+    Returns:
+        sample (float):
+            Sample drawn from the inverse gamma distribution between the 
+            specified prior bounds.
     """
-    if s is None and sk is None:
-        raise ValueError("Must pass in s (real space) or sk (Fourier space) vector.")
 
     if sk is None:
         axes = (1,)
@@ -115,23 +135,15 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=100000):
         sk = np.fft.fftn(sk, axes=axes)
         sk = np.fft.fftshift(sk, axes=axes)
     Nobs, Nfreqs = sk.shape
-
-    if prior is None:
-        prior = np.zeros((2, Nfreqs), dtype=float)
-
-    # The scale parameter for the inverse gamma distribution (beta) is
-    # equivalent to (Ntimes - 1) times the variance over the time axis of the
-    # delay spectrum of the Gaussian Constrained Realization of the EoR
-    beta = np.sum(sk * sk.conj(), axis=0).real
     
-    # The shape parameter (alpha) differs from that used in Eriksen et al. 2008
-    # i.e. `alpha = Nobs/2 - 1` because our data vector is complex and has
-    # twice as many numbers as a purely real data vector
-    alpha = Nobs - 1.0
-
-    # We obtain samples of the power spectrum (x) by instead sampling the random
-    # variable y = x / beta and then obtain x via x = y * beta
-    x = np.zeros(Nfreqs)
+    prior = prior + 0.0001 #FIXME: shifting priors manually to avoid log10(0)
+    prior_min = prior[1,57]
+    prior_max=prior[0,57]
+    
+    alpha=Nobs-1
+    beta = np.sum(sk * sk.conj(), axis=0).real
+    # Sample cdf logarithmically between provided prior bounds
+    x = np.logspace(np.log10(prior_min), np.log10(prior_max), ngrid)
     for i in range(Nfreqs):
         if np.any(prior[:, i] > 0):
 
@@ -141,8 +153,7 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=100000):
             # value of the shape parameter (alpha) by 1.  With a log-uniform
             # prior, we thus sample from an inverse gamma distribution with
             # shape parameter alpha + 1.
-            
-            x[i] = invgamma.rvs(a=alpha+1) * beta[i]
+            x[i] = draw_icdf_samples(alpha,beta[i], x)
             outside_prior = x[i] > prior[0, i] or x[i] < prior[1, i]
             
             if outside_prior:
@@ -153,21 +164,20 @@ def sample_S(s=None, sk=None, prior=None, max_prior_iter=100000):
                 x_arr=[]
                 # pbar=tqdm(total=max_prior_iter)
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
-                    x[i] = invgamma.rvs(a=alpha+1) * beta[i]
+                    x[i] = draw_icdf_samples(cdf,alpha,beta[i])
                     x_arr.append(x[i])
                     prior_iter+=1
                     # pbar.update(1)
                 # pbar.close()
                 print("Last sample: ",x_arr[-1])
-                np.savetxt('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests/x_resamples',x_arr)
                 if prior_iter>=max_prior_iter:
+                    print("Priors: {}".format(prior[:,i]))
                     print("\nAlpha: {}, Beta: {}".format(alpha,beta[i]))
                     raise ValueError("Number of prior resamples exceeded max_prior_iter")
         else:
-            x[i] = invgamma.rvs(a=alpha) * beta[i]
+            x[i] = draw_icdf_samples(alpha,beta[i],x)
 
     return x
-
 
 def sprior(signals, bins, factor):
     """
@@ -441,7 +451,7 @@ def gibbs_step_fgmodes(
     f0=None,
     nproc=1,
     map_estimate=False,
-    verbose=False
+    verbose=True
 ):
     """
     Perform a single Gibbs iteration for a Gibbs sampling scheme using a foreground model
@@ -592,21 +602,25 @@ def gibbs_step_fgmodes(
     # FIXME: this will need to be changed to account for time-dependent
     # flags (i.e. when we have a different N per time).
     chisq = np.abs(vis - model)**2 * Ninv.diagonal()[None, :]
-    if verbose:
+    chisq_mean = chisq[:, flags].mean()
+
+    if verbose==True:
         chisq_mean = chisq[:, flags].mean()
-        if chisq_mean > 10:
-            print(f"{chisq_mean:<9.1e}", end=" ")
-        else:
-            print(f"{chisq_mean:<9.3f}", end=" ")
+        print(f"{chisq_mean:<9.1e}", end=" ")
+
+        # if chisq_mean > 10:
+        #     print(f"{chisq_mean:<9.1e}", end=" ")
+        # else:
+        #     print(f"{chisq_mean:<9.3f}", end=" ")
     
     # (2) Sample EoR signal power spectrum (and also convert to equivalent
     # covariance matrix sample)
     # t6=time.time()
     # print("Sampler starting after time: {}".format(t6-t5))
-    # ps_sample = sample_S(s=signal_cr, prior=ps_prior)
+    ps_sample = sample_S(s=signal_cr, prior=ps_prior)
     
     #FIXME: Fix prior bounds to properly sample PS
-    ps_sample = np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/ps_sample.npy',allow_pickle=False)
+    # ps_sample = np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/ps_sample.npy',allow_pickle=False)
     # t7=time.time()
     # print("Sampling done in time: {}".format(t7-t6))
     # print("Nfreqs: ",Nfreqs)
@@ -756,8 +770,8 @@ def gibbs_sample_with_fg(
     h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list) #Selecting only 0th time
     # Loop over iterations
     if verbose:
-        print("Iter     Time [s]    Info    |Ax - b|    Chisq    Time sys (s)    Sys Info    Sys |Ax-b|    ln Post")
-        print("-----    --------    ----    --------    -----    ------------    --------    ----------    -------")
+        print("Iter     Time [s]    Info    |Ax - b|    T_Sys(s)    Sys Info    Sys |Ax-b|    Chisq    ln Post")
+        print("-----    --------    ----    --------    --------    --------    ----------    -----    -------")
 
     for i in range(Niter):
         # print("Iteration: ",i)
@@ -772,7 +786,7 @@ def gibbs_sample_with_fg(
             # uvd=utils.form_pseudo_stokes_vis(uvd)
             antpairpols = uvd.get_antpairpols()
             clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
-            sys_model_past= (vis/clean_vis)
+            sys_model_past= (vis/clean_vis) * np.random.uniform(size=1)
             b_sys_past = sys_model_past[int(Nfreqs/2),:]
             if not os.path.exists('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files'):
                 os.makedirs('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files')

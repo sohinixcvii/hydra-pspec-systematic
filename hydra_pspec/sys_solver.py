@@ -1,15 +1,12 @@
 # Function definitions for GCR solver
 
 import numpy as np
-# import skimage
-# from skimage.io import imshow, imread
-# from skimage.color import rgb2gray
 from math import pi as pi
 import matplotlib.pylab as plt
 from scipy.linalg import fractional_matrix_power as fmp
 from sklearn.metrics import *
 import scipy.linalg as sl
-import scipy
+import scipy 
 import time
 
 def fourier_2d(freqs,times):
@@ -28,8 +25,7 @@ def fourier_2d(freqs,times):
     DELAY, FR = np.meshgrid(delay, fringe_rate)
     return DELAY,FR
 
-def fourier_mode_2d_udf(freqs, times, nfreq, ntime, freq0=None, time0=None, 
-                             shape0=None):
+def fourier_mode_2d_udf(freqs, times, nfreq, ntime, freq0=None, time0=None, shape0=None):
     
     """
     Construct a set of 2D Fourier modes from a list of wavenumber integers, 
@@ -174,94 +170,6 @@ def cholesky_inverse(A):
     
     return A_inv
 
-def gcr_sys(vis,s,Ninv,Bi,nm_list, times, freqs, hj=None):
-    '''
-    Implements the GCR equation. Forms matrices and solves the system of equations to obtain the systematics vector b_sys. 
-    Parameters:
-
-    Parameters:
-        vis: Ratio of corrupted Visibilities and model shape=(len(lsts),len(freqs))
-        s: Model for eor and foreground visibilities shape=(len(lsts),len(freqs))
-        Ninv: Inverse of noise covariance matrix shape=(len(frequencies),len(frequencies))
-        Bi: Inverse of prior covariance matrix shape=(len(mode_pairs),len(mode_pairs))
-        nm_list: List of selected modes for analysis, shape= (len(nm_list),2)
-        times: Array of lsts, shape= (Ntimes, 1)
-        freqs: Array of frequencies, shape= (Nfreqs, 1)
-        hj: hj projection operator, complex, shape=len(frequencies)*len(lsts),len(nm_list)
-
-    Returns:
-        b_sys: Complex vector of systematic amplitude predictions of shape=`(len(nm_list))`.
-    '''
-    # t0=time.time()
-    if hj is None:
-        hj=h_j_op(freqs=freqs, lsts=times, nm_list=nm_list)
-
-    vis_f=vis.reshape([len(times)*len(freqs),1],order='F')
-    s=s.flatten().reshape([len(times)*len(freqs),1],order='F')
-    # t1=time.time()
-    # print("data and model formatted. Time: {}".format(t1-t0))
-    diag_el=Ninv[0,0]
-    Ninv=diag_el*np.ones(shape=len(times)*len(freqs), dtype=complex).reshape([len(times)*len(freqs),1],order='F')
-    Ninv_sqrt=np.sqrt(Ninv)
-    # t2=time.time()
-    # print("Noise cov and sqrt made. Time: {}".format(t2-t1))
-    w_re=np.random.normal(size=(len(times)*len(freqs),1),scale=1/np.sqrt(2),loc=0)
-    w_im=np.random.normal(size=(len(times)*len(freqs),1),scale=1/np.sqrt(2),loc=0)
-    Bi_diag=np.concatenate((Bi.diagonal(),Bi.diagonal()))
-    # Bi_diag=0.01
-    Bi=Bi_diag*np.eye(2*len(nm_list))
-    prod_1=s.real.T @ (Ninv*s.real) + s.imag.T @ (Ninv*s.imag)
-    # t3=time.time()
-    # print("Product made. Time:  {}".format(t3-t2))
-
-    a11=hj.real.T @ (prod_1*hj.real) + hj.imag.T @ (prod_1 *hj.imag)
-    a12= -1*hj.real.T @ (prod_1*hj.imag) + hj.imag.T @ (prod_1*hj.real)
-    
-    # t4=time.time()
-    # print("Prod_1 calculated in time: {}".format(t4-t3))
-    
-    a_top=np.concatenate((a11,a12),axis=1)
-    a_bottom=np.concatenate((-1*a12,a11),axis=1)
-    A_mat=np.concatenate((a_top,a_bottom),axis=0)
-    A_mat= Bi+A_mat
-
-    # t5=time.time()
-    # print("A_mat made in time: {}".format(t5-t4))
-    prod_2_re=s.real.T @ Ninv
-    prod_2_im=s.imag.T @ Ninv
-    prod_3_re=s.real.T @ Ninv_sqrt
-    prod_3_im=s.imag.T @ Ninv_sqrt
-    b11= hj.real.T @ (prod_2_re*vis_f.real)
-    b12= hj.imag.T @ (prod_2_im*vis_f.imag)
-    b13= hj.real.T @ (prod_3_re*w_re)
-    b14= hj.imag.T @ (prod_3_im*w_im)
-    b111=b11+b12+b13+b14
-
-    # t6=time.time()
-    # print("B11 made: {}".format(t6-t5))
-
-    b21= -1*hj.imag.T @ (prod_2_re*vis_f.real)
-    b22= hj.real.T @ (prod_2_im*vis_f.imag)
-    b23= -1*hj.imag.T @ (prod_3_re*w_re)
-    b24= hj.real.T @ (prod_3_im*w_im)
-    b222= b21+b22+b23+b24
-
-    # t7=time.time()
-    # print("B222 made: {}".format(t7-t6))
-
-    b_mat=np.concatenate((b111,b222),axis=0)
-    # t8=time.time()
-
-    # print("b_mat made: {}".format(t8-t7))
-    b_sys,_=scipy.sparse.linalg.cgs(A_mat,b_mat,rtol=1e-10)
-
-    n_half=b_sys.shape[0]//2
-    b_real=b_sys[:n_half]
-    b_imag=b_sys[n_half:]
-    b_sys=b_real+1.j*b_imag
-
-    return b_sys
-
 def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
     '''
     Parameters:
@@ -293,7 +201,7 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
     Nih_sre=Nih*s.real
     Nih_sim=Nih*s.imag
     
-    # print("Shape check 2: \n Nih_sre: {}\n Nih_sim: {}".format(Nih_sre.shape,Nih_sim.shape))
+    # print("Shape check 2: \n H: {}\n Nih_sre: {}\n Nih_sim: {}".format(H.shape,Nih_sre.shape,Nih_sim.shape))
     
     m11= Nih_sre[:,np.newaxis]*H.real - Nih_sim[:,np.newaxis]*H.imag
     m12= -1 *Nih_sre[:,np.newaxis]*H.imag - Nih_sim[:,np.newaxis]*H.real
@@ -310,24 +218,26 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
     nih_dre=Nih*d.real
     nih_dim=Nih*d.imag
     
-    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim
-    denom= m12.T @ nih_dre + m11.T @ nih_dim
+    om_re=np.random.normal(size=(Nfreqs),scale=1/np.sqrt(2),loc=0)
+    om_im=np.random.normal(size=(Nfreqs),scale=1/np.sqrt(2),loc=0)
+    
+    #FIXME: add the gaussian fluctuations to the following terms
+    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) * om_re + (H.imag.T @ Nih_sim) * om_im
+    denom= m12.T @ nih_dre + m11.T @ nih_dim - (H.imag.T @ Nih_sre) * om_re + (H.real.T @ Nih_sim) * om_im
     
     b_mat= np.concatenate((nume, denom), axis=0)
     
     # print("Shape checks: \n A_mat: {}\n b_mat: {}".format(A_mat.shape,b_mat.shape))
-    
+    Ai = np.linalg.inv(A_mat)
     if b_sys_past is not None:
         x0=np.concatenate([b_sys_past.real,b_sys_past.imag],axis=0)
-    b_sys,info=scipy.sparse.linalg.cgs(A_mat,b_mat,tol=1e-12)
+    b_sys,info=scipy.sparse.linalg.cgs(A_mat,b_mat, M=Ai, tol=1e-12)
     residuals = np.abs(A_mat @ b_sys - b_mat).mean()
-    b_sys=b_sys[int(len(b_sys)/2):] + 1.j* b_sys[:int(len(b_sys)/2)]
-
+    b_sys=b_sys[:int(len(b_sys)/2)] + 1.j* b_sys[int(len(b_sys)/2):]
+    # print("Sys time: ",f"{time.time() - st:<12.1f}")
     if verbose:
-        print(f"{time.time() - st:<12.1f}", end="")
-        print(f"{info:<8.1f}", end="")
+        print(f"{time.time() - st:<12.1f}", end="\t")
+        print(f"{info:<8.1f}", end=" ")
         print(f"{residuals:<12.2e}", end="")
     
-    
     return b_sys
-    
