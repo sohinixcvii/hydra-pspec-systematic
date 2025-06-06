@@ -189,6 +189,7 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
     if verbose:
         st=time.time()
     Ntimes, Nfreqs= d.shape
+    Nmodes = H.shape[1]
     d=d.flatten(order='F')
     Binv_diag=np.diag(Binv)
     Binv_exp=np.concatenate((Binv_diag.real,Binv_diag.imag))*np.eye(2*np.shape(Binv)[0])
@@ -212,16 +213,17 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
     nume=np.concatenate((m11,m12),axis=1)
     denom=np.concatenate((-1*m12,m11),axis=1)
     M_tilde=np.concatenate((nume,denom),axis=0)
-    # print("Component shape checks: \n m11: {}\n m12: {}\n M_tilde: {}".format(m11.shape,m12.shape,M_tilde.shape))    
     A_mat= Binv_exp + M_tilde.conj().T @ M_tilde # Try einsum as an alternative
     
     nih_dre=Nih*d.real
     nih_dim=Nih*d.imag
     
-    om_re=np.random.normal(size=(Nfreqs),scale=1/np.sqrt(2),loc=0)
-    om_im=np.random.normal(size=(Nfreqs),scale=1/np.sqrt(2),loc=0)
+    om_re=np.random.normal(size=(Nmodes),scale=1/np.sqrt(2),loc=0)
+    om_im=np.random.normal(size=(Nmodes),scale=1/np.sqrt(2),loc=0)
     
-    #FIXME: add the gaussian fluctuations to the following terms
+    # print("Component shape checks: \n m11: {}\n m12: {}\n M_tilde: {}\n nih_dre: {}\n H.real: {}\n Nih_sre: {}\n om_re: {}\n".format(m11.shape,m12.shape,M_tilde.shape, nih_dre.shape, H.real.shape, Nih_sre.shape, om_re.shape))
+    # print("Expression: m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) * om_re + (H.imag.T @ Nih_sim) * om_im \n")    
+
     nume= m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) * om_re + (H.imag.T @ Nih_sim) * om_im
     denom= m12.T @ nih_dre + m11.T @ nih_dim - (H.imag.T @ Nih_sre) * om_re + (H.real.T @ Nih_sim) * om_im
     

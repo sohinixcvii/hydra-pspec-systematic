@@ -25,7 +25,7 @@ from hydra_pspec.utils import (
     add_mtime_to_filepath
 )
 
-nm_list=np.loadtxt('nm_list').astype(int)
+nm_list=np.array(np.loadtxt('nm_list_ind').astype(int))
 
 try:
     from mpi4py import MPI
@@ -527,8 +527,8 @@ for data in list_of_baselines:
         )
         # ps_prior[0, ps_prior_inds] = args.ps_prior_hi
         # ps_prior[1, ps_prior_inds] = args.ps_prior_lo
-        ps_prior[0, ps_prior_inds] = 5e+10
-        ps_prior[1, ps_prior_inds] = 0
+        ps_prior[0, ps_prior_inds] = 100    
+        ps_prior[1, ps_prior_inds] = 0.1
     if rank == 0:
         verbose = args.verbose
     else:

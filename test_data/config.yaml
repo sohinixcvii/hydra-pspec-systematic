@@ -11,13 +11,13 @@ n_ps_prior_bins: 3
 dirname: results-seed-7123689-Niter-1000
 clobber: False
 # Signal model
-sigcov0: ./eor-cov.npy
+sigcov0: /Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/eor-cov.npy
 # FG model
 Nfgmodes: 12
-fgmodes: ./fgmodes.npy
+fgmodes: /Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/fgmodes.npy
 # Noise
-noise: ./noise.npy
-noise_cov: ./noise-cov.npy
+noise: /Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/noise.npy
+noise_cov: /Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/noise-cov.npy
 # Input files
 file_paths:
-- ./vis-eor-fgs.uvh5
+- /Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5

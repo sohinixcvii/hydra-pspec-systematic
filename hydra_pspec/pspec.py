@@ -86,8 +86,13 @@ def data_dly_fr(data, freqs, times, windows=None,
 
     return data_fr_dly
 
+'''ICDF sampler'''
 def draw_icdf_samples(alpha, beta, x):
-    cdf = invgamma.rvs(a=alpha+1) * beta
+    
+    # if beta==0: #Robustness line for degenerate CDFs, causes issues in interpolation otherwise
+    #     return 0
+    
+    cdf = invgamma.cdf(x, a=alpha+1, loc=0, scale=beta)
     cdf -= cdf.min() # shift minimum down to zero
     if cdf.max()==0.0:
         cdf /= (cdf.max()+1e-5) # rescale maximum to 1
@@ -97,7 +102,7 @@ def draw_icdf_samples(alpha, beta, x):
     # Remove duplicate entries in cdf so interpolator can work properly; 
     # tends to result in sample points near the extrema of the prior bounds anyway
     cdf_unique, idxs_unique = np.unique(cdf, return_index=True)
-    u = np.random.uniform(high=cdf.max())
+    u = np.random.uniform(high=cdf.max()) #High set to this value, otherwise the sample drawn is always out of the upper bound
     # Draw sample using inversion sampling method
     # Note: Must use linear interpolation to avoid very bad interpolation results
     return interp1d(cdf_unique, x[idxs_unique], kind='linear')(u)
@@ -136,14 +141,14 @@ def sample_S(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
         sk = np.fft.fftshift(sk, axes=axes)
     Nobs, Nfreqs = sk.shape
     
-    prior = prior + 0.0001 #FIXME: shifting priors manually to avoid log10(0)
     prior_min = prior[1,57]
     prior_max=prior[0,57]
     
     alpha=Nobs-1
     beta = np.sum(sk * sk.conj(), axis=0).real
+
     # Sample cdf logarithmically between provided prior bounds
-    x = np.logspace(np.log10(prior_min), np.log10(prior_max), ngrid)
+    x = np.logspace(np.log10(prior_min + 0.00001), np.log10(prior_max), ngrid) #FIXME: the prior min is 0, can't have that. 
     for i in range(Nfreqs):
         if np.any(prior[:, i] > 0):
 
@@ -153,6 +158,8 @@ def sample_S(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
             # value of the shape parameter (alpha) by 1.  With a log-uniform
             # prior, we thus sample from an inverse gamma distribution with
             # shape parameter alpha + 1.
+            prior[1,i] = prior[1,i]+0.000001 #FIXME: priors should be fixed outside of this loop 
+
             x[i] = draw_icdf_samples(alpha,beta[i], x)
             outside_prior = x[i] > prior[0, i] or x[i] < prior[1, i]
             
@@ -164,7 +171,7 @@ def sample_S(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
                 x_arr=[]
                 # pbar=tqdm(total=max_prior_iter)
                 while (x[i] > prior[0, i] or x[i] < prior[1, i]) and prior_iter<max_prior_iter:
-                    x[i] = draw_icdf_samples(cdf,alpha,beta[i])
+                    x[i] = draw_icdf_samples(alpha,beta[i],x)
                     x_arr.append(x[i])
                     prior_iter+=1
                     # pbar.update(1)
@@ -589,8 +596,8 @@ def gibbs_step_fgmodes(
     # Update systematics model
     sys_model = h_j @ b_sys # Shape of flattened data
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
-    
-    model = sys_model * model
+    sys_ref = np.load('sys_select.npy',allow_pickle=False)
+    model = ((sys_model+sys_ref) * model) - sys_ref * model 
     '''--------Saving sys model for diagnostics-------------'''
     np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_0.npy',sys_model,allow_pickle=False)
     '''------------------------------------------------------'''
@@ -618,7 +625,8 @@ def gibbs_step_fgmodes(
     # t6=time.time()
     # print("Sampler starting after time: {}".format(t6-t5))
     ps_sample = sample_S(s=signal_cr, prior=ps_prior)
-    
+    with open ('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/sampler_tests/ps_sample','a') as fn:
+        np.savetxt(fn,ps_sample.reshape(1,-1))
     #FIXME: Fix prior bounds to properly sample PS
     # ps_sample = np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/ps_sample.npy',allow_pickle=False)
     # t7=time.time()
@@ -636,9 +644,9 @@ def gibbs_step_fgmodes(
     Sinv = np.linalg.inv(S_sample)
     ln_post = np.sum(np.diagonal(
         -(
-            (vis - model)[:, flags].conj()
+            (vis - (sys_ref * model))[:, flags].conj()
             @ Ninv[flags][:, flags]
-            @ (vis - model)[:, flags].T
+            @ (vis - (sys_ref * model))[:, flags].T
         )
         - (
             signal_cr[:, flags].conj()
@@ -758,7 +766,7 @@ def gibbs_sample_with_fg(
     signal_S = np.zeros((Niter, Nfreqs, Nfreqs))
     signal_ps = np.zeros((Niter, Nfreqs))
     fg_amps = np.zeros((Niter, Ntimes, Nmodes), dtype=complex)
-    b_sys = np.zeros((Niter, len(nm_list)), dtype=complex)
+    b_sys = np.zeros((Niter, nm_list.shape[0]), dtype=complex)
     # Useful debugging statistics
     chisq = np.zeros((Niter, Ntimes, Nfreqs))
     ln_post = np.zeros(Niter)
@@ -767,7 +775,9 @@ def gibbs_sample_with_fg(
 
     # Precompute h_j systematics projection operator
     # FIXME: include path as arg in import file
-    h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list) #Selecting only 0th time
+    nm_list_select = np.loadtxt('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/nm_list_select')
+    h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list_select) #nm_list containing dl fr values
+    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/h_j_op_all_modes.npy',h_j,allow_pickle=False)
     # Loop over iterations
     if verbose:
         print("Iter     Time [s]    Info    |Ax - b|    T_Sys(s)    Sys Info    Sys |Ax-b|    Chisq    ln Post")
@@ -779,21 +789,26 @@ def gibbs_sample_with_fg(
         if verbose:
             print(f"{i+1:<9d}", end="")
         if i==0:
+            vis = np.load('vis_corr_mod.npy',allow_pickle=False) #FIXME: this is a test code. Remove once done. 
             # FIXME: include path as arg in import file
-            # uvd.read('gauss_1_data/vis-eor-ptsrc-gsm.uvh5')
             uvd=UVData()
             uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
-            # uvd=utils.form_pseudo_stokes_vis(uvd)
+            uvd=utils.form_pseudo_stokes_vis(uvd)
             antpairpols = uvd.get_antpairpols()
             clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
-            sys_model_past= (vis/clean_vis) * np.random.uniform(size=1)
-            b_sys_past = sys_model_past[int(Nfreqs/2),:]
+            sys_model_past= (vis/clean_vis)
+            # b_sys_past = np.ones(nm_list.shape[0],dtype='complex') * np.random.uniform(size=1)
+            b_sys_past = np.zeros(h_j.shape[1]) #Starting from 0 works best, DO NOT CHANGE. 
+            
+            # b_sys_past = sys_model_past[nm_list[:,1],nm_list[:,0]]            
             if not os.path.exists('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files'):
                 os.makedirs('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files')
                 np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/sys_model_past.npy',sys_model_past)
+                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/b_sys_past.npy',b_sys_past)
             else:
                 np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_past.npy',sys_model_past,allow_pickle=False)
                 np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/h_j_op.npy',h_j,allow_pickle=False)
+                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/b_sys_past.npy',b_sys_past)
             # B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past))
         else:
             b_sys_past=b_sys[i-1]
