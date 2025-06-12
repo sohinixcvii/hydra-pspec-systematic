@@ -17,6 +17,7 @@ from uvtools.dspec import gen_window
 from uvtools.utils import FFT
 from pyuvdata import UVData
 from tqdm import tqdm
+from .plotting_functions import master_plotter
 uvd=UVData()
 pr=cProfile.Profile()
 
@@ -454,6 +455,7 @@ def gibbs_step_fgmodes(
     freqs,
     lsts,
     Bi,
+    iter,
     ps_prior=None,
     f0=None,
     nproc=1,
@@ -524,26 +526,16 @@ def gibbs_step_fgmodes(
     Nparams = Nfreqs + Nmodes
     assert flags.shape == (Nfreqs,), "`flags` array must have shape (Nfreqs,)"
 
-    '''--------Saving vis for diagnostics-------------'''
-    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/vis.npy',vis,allow_pickle=False)
-    '''------------------------------------------------------'''
-    
     # Precompute 2D Fourier operator matrix
     fourier_op = utils.fourier_operator(Nfreqs)
 
-    
-    '''--------Saving sys model for diagnostics-------------'''
-    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_past.npy',sys_model_past,allow_pickle=False)
-    '''------------------------------------------------------'''
-    
     # Get matrices necessary for the GCR step
     
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
-
     cr = gcr_fgmodes(
         vis=vis, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
     verbose=verbose
-    )   #FIXME: Sending just vis in here makes this step absorb the systematics as well. 
+    )   #FIXME: Running test on the d=(1+delta g)s+n form of the equations 
     # t0=time.time()
     
     # print("Eor-FG GCR done in time: {}".format(t1-t0))
@@ -568,26 +560,20 @@ def gibbs_step_fgmodes(
     # 1a. Solve GCR equation to obtain estimate of systematic component
     # pr.enable()
     
-    '''-------Saving sky model for diagnostics-------'''
-    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sky_model_0.npy',model,allow_pickle=False)
-    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/eor-gcr.npy',signal_cr,allow_pickle=False)
-    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/fg-amps.npy',fg_amps @ fgmodes.T,allow_pickle=False)
-    '''----------------------------------------------'''
-    '''second version of sys GCR'''
     
     '''This block is for only when we are informing gcr_sys with true solution'''
     #FIXME: remove the following file-loading from code
-    # uvd=UVData()
-    # uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
-    # antpairpols = uvd.get_antpairpols()    
-    # uvd = utils.form_pseudo_stokes_vis(uvd)
-    # clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
-
-    b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis,Ninv=Ninv,s=model.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose)
+    uvd=UVData()
+    uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
+    antpairpols = uvd.get_antpairpols()    
+    uvd = utils.form_pseudo_stokes_vis(uvd)
+    clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
+    
+    master_plotter([clean_vis],col_labels=[' '],fig_title='Clean visibility loaded from file')
+    
+    b_sys=sys_sol.gcr_sys_v1(Binv=100*Bi,d=vis-clean_vis,Ninv=Ninv,s=clean_vis.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose,iter=iter)
     # pr.disable()
     # t4=time.time()
-    # print("SYS-GCR done in time: {}".format(t4-t3))
-    # np.save('test_files/gcr_sys_data.npy',vis/model)
 
     # ps = pstats.Stats(pr, stream=sys.stdout)
     # ps.strip_dirs()
@@ -596,12 +582,10 @@ def gibbs_step_fgmodes(
     # Update systematics model
     sys_model = h_j @ b_sys # Shape of flattened data
     sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
-    sys_ref = np.load('sys_select.npy',allow_pickle=False)
-    model = ((sys_model+sys_ref) * model) - sys_ref * model 
-    '''--------Saving sys model for diagnostics-------------'''
-    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_0.npy',sys_model,allow_pickle=False)
-    '''------------------------------------------------------'''
-    
+    sys_model += np.ones_like(sys_model, dtype='complex')  # Adding ones to the systematics solution
+    # sys_ref = np.load('sys_select.npy',allow_pickle=False)
+    # model = ((sys_model+sys_ref) * model) - sys_ref * model
+    model = (sys_model * model)
     # t5=time.time()
     # print("Data saved and models made in time: {}".format(t5-t4))
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
@@ -625,8 +609,6 @@ def gibbs_step_fgmodes(
     # t6=time.time()
     # print("Sampler starting after time: {}".format(t6-t5))
     ps_sample = sample_S(s=signal_cr, prior=ps_prior)
-    with open ('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/sampler_tests/ps_sample','a') as fn:
-        np.savetxt(fn,ps_sample.reshape(1,-1))
     #FIXME: Fix prior bounds to properly sample PS
     # ps_sample = np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/ps_sample.npy',allow_pickle=False)
     # t7=time.time()
@@ -644,9 +626,9 @@ def gibbs_step_fgmodes(
     Sinv = np.linalg.inv(S_sample)
     ln_post = np.sum(np.diagonal(
         -(
-            (vis - (sys_ref * model))[:, flags].conj()
+            (vis - (model))[:, flags].conj()
             @ Ninv[flags][:, flags]
-            @ (vis - (sys_ref * model))[:, flags].T
+            @ (vis - (model))[:, flags].T
         )
         - (
             signal_cr[:, flags].conj()
@@ -789,7 +771,7 @@ def gibbs_sample_with_fg(
         if verbose:
             print(f"{i+1:<9d}", end="")
         if i==0:
-            vis = np.load('vis_corr_mod.npy',allow_pickle=False) #FIXME: this is a test code. Remove once done. 
+            vis = np.load('vis_corr_mod_2modes.npy',allow_pickle=False) #FIXME: this is a test code. Remove once done. 
             # FIXME: include path as arg in import file
             uvd=UVData()
             uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
@@ -797,24 +779,15 @@ def gibbs_sample_with_fg(
             antpairpols = uvd.get_antpairpols()
             clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
             sys_model_past= (vis/clean_vis)
-            # b_sys_past = np.ones(nm_list.shape[0],dtype='complex') * np.random.uniform(size=1)
-            b_sys_past = np.zeros(h_j.shape[1]) #Starting from 0 works best, DO NOT CHANGE. 
+            b_sys_past = np.ones(h_j.shape[1],dtype='complex') #Starting from 0 works best, DO NOT CHANGE. 
             
-            # b_sys_past = sys_model_past[nm_list[:,1],nm_list[:,0]]            
-            if not os.path.exists('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files'):
-                os.makedirs('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files')
-                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/sys_model_past.npy',sys_model_past)
-                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/b_sys_past.npy',b_sys_past)
-            else:
-                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/sys_model_past.npy',sys_model_past,allow_pickle=False)
-                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/h_j_op.npy',h_j,allow_pickle=False)
-                np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/b_sys_past.npy',b_sys_past)
-            # B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past))
         else:
             b_sys_past=b_sys[i-1]
             sys_model_past = (h_j @ b_sys_past).reshape([Ntimes,Nfreqs],order='F')
-        B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past)) #Uncomment this to sample for B
-        
+            sys_model_past = np.ones_like(sys_model_past,dtype='complex')+sys_model_past # Implementing the 1+del g model. 
+        # B_cov_inv=np.sqrt(b_sys_past)*np.eye(len(b_sys_past)) #Uncomment this to sample for B
+        B_cov_inv=1*np.eye(len(b_sys_past)) #B is an identity matrix 
+
         # Do Gibbs iteration
         signal_cr[i], signal_S, signal_ps[i], fg_amps[i], b_sys[i], chisq[i], ln_post[i]\
             = gibbs_step_fgmodes(
@@ -833,18 +806,10 @@ def gibbs_sample_with_fg(
                 ps_prior=ps_prior,
                 f0=None,
                 nproc=nproc,
+                iter=i,
                 map_estimate=map_estimate,
                 verbose=verbose
-            )
-        
-        '''-----------Saving iteration results for diagnostics-----------'''
-        model = (signal_cr[i] + fg_amps[i] @ fgmodes.T)
-        np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_500/model_'+str(i)+'.npy',model,allow_pickle=False)
-        sys_model = h_j @ b_sys[i] # Shape of flattened data
-        sys_model= np.reshape(sys_model,[Ntimes,Nfreqs], order='F')
-        np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_500/sys_model_'+str(i)+'.npy',sys_model,allow_pickle=False)
-        '''--------------------------------------------------------------'''
-        
+            )      
         if out_dir is not None and (i+1) % write_Niter == 0:
             # Write current set of samples to disk
             utils.write_numpy_files(

@@ -8,6 +8,7 @@ from sklearn.metrics import *
 import scipy.linalg as sl
 import scipy 
 import time
+from .plotting_functions import master_plotter
 
 def fourier_2d(freqs,times):
     F, T = np.meshgrid(freqs, times)
@@ -170,7 +171,7 @@ def cholesky_inverse(A):
     
     return A_inv
 
-def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
+def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False,iter=0):
     '''
     Parameters:
     Binv:
@@ -190,47 +191,70 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False):
         st=time.time()
     Ntimes, Nfreqs= d.shape
     Nmodes = H.shape[1]
+    
+    master_plotter([d],col_labels=[' '],fig_title='Data residual sent to gcr_sys iter'+str(iter))
+    # master_plotter([s.reshape((Ntimes,Nfreqs),order='F')],col_labels=[' '],fig_title='Sky model sent to gcr_sys iter'+str(iter))
     d=d.flatten(order='F')
+    
+    # master_plotter([Binv],col_labels=[' '],fig_title='B inverse',imag_flag=False)
+    
     Binv_diag=np.diag(Binv)
-    Binv_exp=np.concatenate((Binv_diag.real,Binv_diag.imag))*np.eye(2*np.shape(Binv)[0])
+    Binv_exp=np.concatenate((Binv_diag.real,Binv_diag.real))*np.eye(2*np.shape(Binv)[0]) #Binverse for the realified case
+    
+    # master_plotter([Binv_exp],col_labels=[' '],fig_title='Binv realified',imag_flag=False)
+    
     diag_el=Ninv[0,0]
     Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex)  #.reshape([len(d),],order='F')
     Nih=np.sqrt(Ninv)
     # print("Shape of realified matrices: \n d: {},\n Binv: {}\n Nih: {}\n s.real: {}\n s.imag: {}".format(d.shape,Binv_exp.shape,Nih.shape,s.real.shape,s.imag.shape))
     
+    om_re=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0)
+    om_im=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0)
+    
     '''eq A'''
     Nih_sre=Nih*s.real
     Nih_sim=Nih*s.imag
     
-    # print("Shape check 2: \n H: {}\n Nih_sre: {}\n Nih_sim: {}".format(H.shape,Nih_sre.shape,Nih_sim.shape))
+    # master_plotter([Nih_sre.reshape((Ntimes,Nfreqs),order='F'),Nih_sim.reshape((Ntimes,Nfreqs),order='F')],col_labels=['sqrt(Ninv)*s.real*omega.real','sqrt(Ninv)*s.imag*omega.imag'],fig_title='Nih*sre*omre comparison')
     
+    # print("Shape check 2: \n H: {}\n Nih_sre: {}\n Nih_sim: {}".format(H.shape,Nih_sre.shape,Nih_sim.shape))
     m11= Nih_sre[:,np.newaxis]*H.real - Nih_sim[:,np.newaxis]*H.imag
     m12= -1 *Nih_sre[:,np.newaxis]*H.imag - Nih_sim[:,np.newaxis]*H.real
-    # m21= Nih_sim[:,np.newaxis]*H.real + Nih_sre[:,np.newaxis]*H.imag
-    # m22= -Nih_sim[:,np.newaxis]*H.imag + Nih_sre[:,np.newaxis]*H.real
     
+    # master_plotter([m11,m12],col_labels=['M11 element','M12 element'],fig_title='M_tile element comparison')
 
     nume=np.concatenate((m11,m12),axis=1)
     denom=np.concatenate((-1*m12,m11),axis=1)
     M_tilde=np.concatenate((nume,denom),axis=0)
+    
+    # master_plotter([nume,denom],col_labels=['Real','Imaginary'],fig_title='M_tilde matrix (realified)',plot_type='matshow',imag_flag=False)
+
     A_mat= Binv_exp + M_tilde.conj().T @ M_tilde # Try einsum as an alternative
     
+    # master_plotter([A_mat[:Nmodes,:],A_mat[Nmodes:,:]],col_labels=['Real','Imaginary'],fig_title='A matrix',plot_type='matshow',imag_flag=False)
+
+
     nih_dre=Nih*d.real
     nih_dim=Nih*d.imag
-    
-    om_re=np.random.normal(size=(Nmodes),scale=1/np.sqrt(2),loc=0)
-    om_im=np.random.normal(size=(Nmodes),scale=1/np.sqrt(2),loc=0)
-    
+
+    Nih_sre = Nih_sre*om_re 
+    Nih_sim = Nih_sim*om_im
+    # master_plotter([nih_dre.reshape((Ntimes,Nfreqs),order='F'),nih_dim.reshape((Ntimes,Nfreqs),order='F')],col_labels=['sqrt(Ninv)*d.real','sqrt(Ninv)*d.imag'],fig_title='sqrt(Ninv)*data comparison',imag_flag=False)
+
     # print("Component shape checks: \n m11: {}\n m12: {}\n M_tilde: {}\n nih_dre: {}\n H.real: {}\n Nih_sre: {}\n om_re: {}\n".format(m11.shape,m12.shape,M_tilde.shape, nih_dre.shape, H.real.shape, Nih_sre.shape, om_re.shape))
     # print("Expression: m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) * om_re + (H.imag.T @ Nih_sim) * om_im \n")    
 
-    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) * om_re + (H.imag.T @ Nih_sim) * om_im
-    denom= m12.T @ nih_dre + m11.T @ nih_dim - (H.imag.T @ Nih_sre) * om_re + (H.real.T @ Nih_sim) * om_im
+    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) + (H.imag.T @ Nih_sim)
+    denom= m12.T @ nih_dre + m11.T @ nih_dim - (H.imag.T @ Nih_sre) + (H.real.T @ Nih_sim)
     
     b_mat= np.concatenate((nume, denom), axis=0)
     
+    
     # print("Shape checks: \n A_mat: {}\n b_mat: {}".format(A_mat.shape,b_mat.shape))
     Ai = np.linalg.inv(A_mat)
+    
+    # master_plotter([Ai],col_labels=[' '],fig_title='Pseudo inverse of A matrix',plot_type='matshow',imag_flag=False)
+    
     if b_sys_past is not None:
         x0=np.concatenate([b_sys_past.real,b_sys_past.imag],axis=0)
     b_sys,info=scipy.sparse.linalg.cgs(A_mat,b_mat, M=Ai, tol=1e-12)
