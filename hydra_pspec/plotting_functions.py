@@ -3,6 +3,7 @@ import numpy as np
 from .config_plots import *
 import os
 import scipy.stats as sci_st
+from astropy import units
 
 def master_plotter(data_sets, col_labels=['Data A','Data B','Data C'],fig_title='Data comparison', plot_type='imshow', norm='linear',save_flag=True,cmap='seismic',dir=op_dir,imag_flag=True):
     '''

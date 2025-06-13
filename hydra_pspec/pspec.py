@@ -278,15 +278,15 @@ def gcr_fgmodes_1d_v2(idx, vis, w, Eh, Nih, Nparams, y, flags, E, Ninv, fgmodes,
     # Construct RHS vector
     b = np.zeros((Nfreqs + Nmodes, 1), dtype=complex)
     
-    b[:Nfreqs] = (y.conj() * Ninv.diagonal() * d).T + y.conj()[:,np.newaxis] * Eh @ oma + (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
-    b[Nfreqs:] = fgmodes.T.conj() @ (y.conj() * Ninv.diagonal() * d).T + fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    b[:Nfreqs] = (y.conj() * Ninv.diagonal() * d).T + y.conj()[:,np.newaxis] * Eh @ oma #+ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
+    b[Nfreqs:] = fgmodes.T.conj() @ (y.conj() * Ninv.diagonal() * d).T #+ fgmodes.T.conj() @ (y.conj()[:,np.newaxis] * Nih[:,np.newaxis] * omb)
     
     # Run CG solver, preconditioned by M=Ai
     x0 = None
     if f0 is not None:
         x0 = np.concatenate((np.zeros(Nparams, dtype=complex), f0))
     
-    xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ai) #maxiter=int(1e5) , rtol=1e-12 , x0=x0, M=Ai
+    xsoln, info = sp.sparse.linalg.cgs(A, b,x0=x0, M=Ai,tol=1e-12) #maxiter=int(1e5) , rtol=1e-12 , x0=x0, M=Ai
     if verbose:
         residual = np.abs(A @ xsoln - b[:, 0]).mean()
         # x0=np.concatenate([d.T.real,d.T.imag],axis=0)
@@ -530,17 +530,15 @@ def gibbs_step_fgmodes(
     fourier_op = utils.fourier_operator(Nfreqs)
 
     # Get matrices necessary for the GCR step
-    
+    # sys_model_past=np.load('/Users/user/Documents/Codes/hydra_sys_project1/GCR_test_scripts/gain.npy',allow_pickle=False)
+    sys_model_past=np.ones_like(vis)
     # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
     cr = gcr_fgmodes(
         vis=vis, w=flags, fgmodes=fgmodes, Nparams=Nparams, sys_model_past=sys_model_past, flags=flags, signal_S=signal_S, Ninv=Ninv, f0=f0, nproc=nproc, map_estimate=map_estimate,
-    verbose=verbose
-    )   #FIXME: Running test on the d=(1+delta g)s+n form of the equations 
+    verbose=verbose)   #FIXME: Running test on the d=(1+delta g)s+n form of the equations 
     # t0=time.time()
     
     # print("Eor-FG GCR done in time: {}".format(t1-t0))
-    if not os.path.exists('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files'):
-        os.makedirs('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files')
     # np.save('test_files/eor_fg_data.npy',vis)
     # np.save('test_files/eor_fg_gain.npy',sys_model_past)
     # np.save('test_files/signal_S.npy',signal_S)
@@ -563,12 +561,13 @@ def gibbs_step_fgmodes(
     
     '''This block is for only when we are informing gcr_sys with true solution'''
     #FIXME: remove the following file-loading from code
-    uvd=UVData()
-    uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
-    antpairpols = uvd.get_antpairpols()    
-    uvd = utils.form_pseudo_stokes_vis(uvd)
-    clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
+    # uvd=UVData()
+    # uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
+    # antpairpols = uvd.get_antpairpols()    
+    # uvd = utils.form_pseudo_stokes_vis(uvd)
+    # clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
     
+    clean_vis=np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/dummy_sky.npy',allow_pickle=False)
     master_plotter([clean_vis],col_labels=[' '],fig_title='Clean visibility loaded from file')
     
     b_sys=sys_sol.gcr_sys_v1(Binv=100*Bi,d=vis-clean_vis,Ninv=Ninv,s=clean_vis.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose,iter=iter)
@@ -579,10 +578,13 @@ def gibbs_step_fgmodes(
     # ps.strip_dirs()
     # ps.sort_stats('time').print_stats()
 
-    # Update systematics model
-    sys_model = h_j @ b_sys # Shape of flattened data
-    sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
-    sys_model += np.ones_like(sys_model, dtype='complex')  # Adding ones to the systematics solution
+    # # Update systematics model
+    # sys_model = h_j @ b_sys # Shape of flattened data
+    # sys_model= np.reshape(sys_model,[Ntimes,Nfreqs],order='F') #Gives data-like model 
+    # sys_model += np.ones_like(sys_model, dtype='complex')  # Adding ones to the systematics solution
+    
+    sys_model = np.ones_like(vis) #FIXME: test code. Delete after use
+    
     # sys_ref = np.load('sys_select.npy',allow_pickle=False)
     # model = ((sys_model+sys_ref) * model) - sys_ref * model
     model = (sys_model * model)
@@ -759,7 +761,6 @@ def gibbs_sample_with_fg(
     # FIXME: include path as arg in import file
     nm_list_select = np.loadtxt('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/nm_list_select')
     h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list_select) #nm_list containing dl fr values
-    np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/divergence_tests_airy_v2_1/h_j_op_all_modes.npy',h_j,allow_pickle=False)
     # Loop over iterations
     if verbose:
         print("Iter     Time [s]    Info    |Ax - b|    T_Sys(s)    Sys Info    Sys |Ax-b|    Chisq    ln Post")
@@ -771,13 +772,15 @@ def gibbs_sample_with_fg(
         if verbose:
             print(f"{i+1:<9d}", end="")
         if i==0:
-            vis = np.load('vis_corr_mod_2modes.npy',allow_pickle=False) #FIXME: this is a test code. Remove once done. 
+            vis = np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/dummy_sky.npy',allow_pickle=False) #FIXME: this is a test code. Remove once done. 
+            clean_vis=np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/dummy_sky.npy',allow_pickle=False)
+
             # FIXME: include path as arg in import file
-            uvd=UVData()
-            uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
-            uvd=utils.form_pseudo_stokes_vis(uvd)
-            antpairpols = uvd.get_antpairpols()
-            clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
+            # uvd=UVData()
+            # uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
+            # uvd=utils.form_pseudo_stokes_vis(uvd)
+            # antpairpols = uvd.get_antpairpols()
+            # clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
             sys_model_past= (vis/clean_vis)
             b_sys_past = np.ones(h_j.shape[1],dtype='complex') #Starting from 0 works best, DO NOT CHANGE. 
             
