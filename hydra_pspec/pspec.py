@@ -389,7 +389,7 @@ def build_matrices(Nparams, y, flags, E, Ninv, fgmodes):
 
 '''GCR equation: Time loop'''
 def gcr_fgmodes(
-    vis, w, fgmodes, Nparams, sys_model_past, flags, signal_S, Ninv, f0=None, nproc=1, map_estimate=False,
+    vis, fgmodes, Nparams, sys_model_past, flags, signal_S, Ninv, f0=None, nproc=1, map_estimate=False,
     verbose=False
 ):
     """
@@ -594,7 +594,7 @@ def gibbs_step_fgmodes(
     '''-----------------------------------------------------------------------------------------------'''
     master_plotter([clean_vis],col_labels=[' '],fig_title='Clean visibility loaded from file') #Plotting the clean visibility that gets loaded
     
-    b_sys=sys_sol.gcr_sys_v1(Binv=100*Bi,d=vis-clean_vis,Ninv=Ninv,s=clean_vis.flatten('F'),H=h_j,b_sys_past=b_sys_past,verbose=verbose,iter=iter)
+    b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis-clean_vis,Ninv=Ninv,s=clean_vis,H=h_j,b_sys_past=b_sys_past,verbose=verbose,iter=iter)
 
     # Update systematics model
     # sys_model = h_j @ b_sys #Shape of flattened data:  delta_g

@@ -5,133 +5,125 @@ import os
 import scipy.stats as sci_st
 from astropy import units
 
-def master_plotter(data_sets, col_labels=['Data A','Data B','Data C'],fig_title='Data comparison', plot_type='imshow', norm='linear',save_flag=True,cmap='seismic',dir=op_dir,imag_flag=True):
-    '''
-    A function to plot real, imaginary, and absolute realisations of any n data sets. 
-    
-    Parameters:
-        data_sets:
-            A set of n 2d data sets, passed as [set a, set b, set c....]. (n, ydim,xdim)
-        col_labels:
-            A set of n data labels for plotting
-        fig_title:
-            A title for the whole figure being saved. Will also be the filename
-        plot_type:
-            Type of plot you want, choose between imshow and matshow. Default is imshow
-        norm:
-            normalisation form for plotting (log/linear etc)
-        save_flag:
-            Whether you want to save the files
-        cmap:
-            colormap to use in these plots. Pass a valid matplotlib cmap or an imported cmasher cmap etc. 
-        dir: 
-            Output directory for the figures
-        imag_flag:
-            Boolean flag for turning .imag plots on/off (particularly useful for realified matrices)
-        
-    '''
-    num_sets=len(data_sets)
-    data_sets=np.array(data_sets)
-    if len(col_labels)!=num_sets:
-        print("Error! Incorrect number of labels")
-        return 0
-    
-    if imag_flag==True:
-        fig, ax = plt.subplots(3,num_sets, figsize=(num_sets*7,num_sets*7+1))
-        ylabels = ['Real','Imaginary','Absolute']
-        if num_sets!=1:
-            for j in range(len(ax[:,0])):
-                ax[j,0].set_ylabel(ylabels[j], fontsize=20)
+def master_plotter(
+    data_sets,
+    col_labels=None,
+    fig_title='Data comparison',
+    plot_type='imshow',
+    norm='linear',
+    save_flag=True,
+    cmap='seismic',
+    dir=op_dir,
+    imag_flag=True,
+    vmin=None,
+    vmax=None,
+    show=False
+):
+    """
+    Plot a list of 2D complex data sets in a grid of subplots, displaying real, imaginary,
+    and absolute components (if `imag_flag` is True).
+
+    Parameters
+    ----------
+    data_sets : list of 2D np.ndarray
+        List of 2D complex-valued arrays to plot. Each entry will be shown in a column of subplots.
+
+    col_labels : list of str, optional
+        Labels for each data set to be shown above the corresponding column. If not provided, generic labels will be used.
+
+    fig_title : str, optional
+        Title for the entire figure. Also used as the filename if saving.
+
+    plot_type : {'imshow', 'matshow'}, optional
+        Type of matplotlib plot to use for each subplot. Default is 'imshow'.
+
+    norm : {'linear', 'log'} or matplotlib.colors.Normalize, optional
+        Color normalization to apply. Can be 'linear', 'log', or a custom Normalize object.
+
+    save_flag : bool, optional
+        Whether to save the resulting figure to file.
+
+    cmap : str or matplotlib colormap, optional
+        Colormap to use for the plots.
+
+    dir : str, optional
+        Directory to save the figure in, if `save_flag` is True. Default is `op_dir` specified in config_plots.
+
+    imag_flag : bool, optional
+        If True, plots all three of real, imaginary, and absolute parts. If False, only plots the real part.
+
+    vmin : float or list of floats, optional
+        Minimum value(s) for colormap normalization. Can be a scalar or list matching the number of data sets.
+
+    vmax : float or list of floats, optional
+        Maximum value(s) for colormap normalization. Can be a scalar or list matching the number of data sets.
+
+    show : bool, optional
+        If True, displays the figure using `plt.show()`. If False, closes the figure after saving.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object containing the plotted subplots.
+
+    Raises
+    ------
+    ValueError
+        If the number of column labels does not match the number of data sets, or if an unsupported `plot_type` or `norm` is provided.
+
+    Notes
+    -----
+    - This function is useful for visually comparing multiple 2D complex-valued matrices in terms of their real, imaginary, and magnitude components.
+    """
+
+    num_sets = len(data_sets)
+    # data_sets = np.array(data_sets)
+    col_labels = col_labels or [f"Data {i}" for i in range(num_sets)]
+
+    if len(col_labels) != num_sets:
+        raise ValueError("Number of column labels must match number of data sets.")
+
+    if isinstance(norm, str):
+        if norm == 'linear':
+            norm_fn = None
+        elif norm == 'log':
+            norm_fn = LogNorm()
         else:
-            for j in range(len(ax)):
-                ax[j].set_ylabel(ylabels[j])
+            raise ValueError(f"Unknown norm '{norm}'")
     else:
-        fig, ax = plt.subplots(1,num_sets, figsize=(num_sets*7+1,7))
-        ylabels = ['Real']
-        if num_sets==1:
-            ax.set_ylabel(ylabels[0])
-        else:
-            ax[0].set_ylabel(ylabels[0])
+        norm_fn = norm
 
-    if num_sets!=1:
-        plt.rcParams.update({'font.size': 20})
-    
-    if plot_type=='imshow':
-        for i in range(num_sets):  
-            if num_sets==1:
-                if imag_flag==True:
-                    im=ax[0].imshow(data_sets[i,:,:].real,origin='lower',norm=norm,cmap=cmap)
-                    ax[0].set_title(col_labels[i])
-                    plt.colorbar(im)
+    nrows = 3 if imag_flag else 1
+    fig, ax = plt.subplots(nrows, num_sets, figsize=(num_sets * 5, nrows * 4), squeeze=False)
+    ylabels = ['Real', 'Imaginary', 'Absolute']
 
-                    im=ax[1].imshow(data_sets[i,:,:].imag,origin='lower',norm=norm,cmap=cmap)
-                    plt.colorbar(im)
-
-                    im=ax[2].imshow(np.absolute(data_sets[i,:,:]),origin='lower',norm=norm,cmap=cmap)
-                    plt.colorbar(im)
-                else:
-                    im = ax.imshow(data_sets[i,:,:].real,origin='lower',norm=norm,cmap=cmap)
-                    ax.set_title(col_labels[i])
-                    plt.colorbar(im)
-
+    for i in range(num_sets):
+        data = data_sets[i]
+        vmin_i = vmin[i] if isinstance(vmin, (list, tuple, np.ndarray)) else vmin
+        vmax_i = vmax[i] if isinstance(vmax, (list, tuple, np.ndarray)) else vmax
+        for j, part in enumerate([np.real(data), np.imag(data), np.abs(data)] if imag_flag else [np.real(data)]):
+            plot_ax = ax[j, i]
+            if plot_type == 'imshow':
+                im = plot_ax.imshow(part, origin='lower', cmap=cmap, norm=norm_fn, vmin=vmin_i, vmax=vmax_i)
+            elif plot_type == 'matshow':
+                im = plot_ax.matshow(part, cmap=cmap, norm=norm_fn, vmin=vmin_i, vmax=vmax_i, aspect='auto')
             else:
-                if imag_flag==True:
-                    im=ax[0,i].imshow(data_sets[i,:,:].real,origin='lower',norm=norm,cmap=cmap)
-                    ax[0,i].set_title(col_labels[i])
-                    plt.colorbar(im)
-                    
-                    im=ax[1,i].imshow(data_sets[i,:,:].imag,origin='lower',norm=norm,cmap=cmap)
-                    plt.colorbar(im)
+                raise ValueError("plot_type must be 'imshow' or 'matshow'")
+            if i == 0:
+                plot_ax.set_ylabel(ylabels[j], fontsize=14)
+            plot_ax.set_title(col_labels[i], fontsize=14)
+            plt.colorbar(im, ax=plot_ax, fraction=0.046, pad=0.04)
 
-                    im=ax[2,i].imshow(np.absolute(data_sets[i,:,:]),origin='lower',norm=norm,cmap=cmap)
-                    plt.colorbar(im)
-                else:
-                    im=ax[i].imshow(data_sets[i,:,:].real,origin='lower',norm=norm,cmap=cmap)
-                    ax[i].set_title(col_labels[i])
-                    plt.colorbar(im)
-    elif plot_type=='matshow':
-        for i in range(num_sets):
-            if num_sets==1:
-                if imag_flag==True:
-                    im=ax[0].matshow(data_sets[i,:,:].real,origin='lower',aspect='auto',cmap=cmap)
-                    ax[0].set_title(col_labels[i])
-                    plt.colorbar(im)
-                    
-                    im=ax[1].matshow(data_sets[i,:,:].imag,origin='lower',aspect='auto',cmap=cmap)
-                    plt.colorbar(im)
+    fig.suptitle(fig_title, fontsize=16)
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
 
-                    im=ax[2].matshow(np.absolute(data_sets[i,:,:]),origin='lower',aspect='auto',cmap=cmap)
-                    plt.colorbar(im)
-                else:
-                    im=ax.matshow(data_sets[i,:,:].real,origin='lower',aspect='auto',cmap=cmap)
-                    ax.set_title(col_labels[i])
-                    plt.colorbar(im)
-            else:
-                if imag_flag==True:
-                    im=ax[0,i].matshow(data_sets[i,:,:].real,origin='lower',aspect='auto',cmap=cmap)
-                    ax[0,i].set_title(col_labels[i])
-                    plt.colorbar(im)
-                    
-                    im=ax[1,i].matshow(data_sets[i,:,:].imag,origin='lower',aspect='auto',cmap=cmap)
-                    plt.colorbar(im)
-
-                    im=ax[2,i].matshow(np.absolute(data_sets[i,:,:]),origin='lower',aspect='auto',cmap=cmap)
-                    plt.colorbar(im)
-                else:
-                    im=ax[i].matshow(data_sets[i,:,:].real,origin='lower',aspect='auto',cmap=cmap)
-                    ax[i].set_title(col_labels[i])
-                    plt.colorbar(im)
-    
-    fig.suptitle(fig_title,ha='center',va='bottom')
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.92)
-    
-    if save_flag==True:
-        if os.path.isdir(dir) == False:
-            os.makedirs(dir)
+    if save_flag:
+        os.makedirs(dir, exist_ok=True)
         plt.savefig(dir+fig_title+'.png',bbox_inches='tight',dpi=300)
-    
-    plt.close()
+    if show:
+        plt.show()
+    else:
+        plt.close()
 
 def plot_dps(vis_eor_path, res_dir, dir=op_dir, Nburn=0, conf_interval=95, ):
     # Load in EoR visibilities

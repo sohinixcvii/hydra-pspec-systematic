@@ -177,11 +177,11 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False,iter=0):
         Binv: array_like
             Inverse of Systematics covariance (Nmodes,Nmodes)
         d: array_like
-            data (visbilities) flattened to a vector of shape (Nfreqs*Ntimes,)
+            data (visbilities) shape (Nfreqs,Ntimes)
         Ninv: array_like
             Inverse of noise covariance matrix
         s: array_like
-            sky model flattened to a vector of shape (Nfreqs*Ntimes,)
+            sky model (Nfreqs,Ntimes)
         H: array_like
             Systematics basis functions with shape (Nfreqs*Ntimes,Nmodes)
         b_sys_past: array_like
@@ -199,8 +199,10 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False,iter=0):
         st=time.time()
     Ntimes, Nfreqs= d.shape
     Nmodes = H.shape[1]
-    
-    master_plotter([d],col_labels=[' '],fig_title='Data residual sent to gcr_sys iter'+str(iter))  #Plotting data sent into the solver
+    master_plotter([d],col_labels=[' '],fig_title='Data residual sent to gcr_sys iter'+str(iter))  #Plotting data sent into the solver    
+    #Flattening datasets for operation
+    d=d.flatten(order='F')
+    s=s.flatten(order='F')
     # master_plotter([s.reshape((Ntimes,Nfreqs),order='F')],col_labels=[' '],fig_title='Sky model sent to gcr_sys iter'+str(iter)) #Plotting the sky model     
     # master_plotter([Binv],col_labels=[' '],fig_title='B inverse',imag_flag=False) #Plotting the Cov matrix
     
@@ -212,6 +214,7 @@ def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False,iter=0):
     
     diag_el=Ninv[0,0]
     Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex)
+    Nih=np.sqrt(Ninv)
 
     #Complex Gaussian vectors with unit variance for fluctuations     
     om_re=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0) #Real part
