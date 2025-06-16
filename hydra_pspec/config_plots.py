@@ -1,12 +1,11 @@
-'''Flags'''
+'''------------------------------------------------------------Flags and constants------------------------------------------------------------'''
 dummy_data_flag = False
 systematics_data_flag = 'ones' # 'ones','dummy' or 'sim'
 noise_flag = True
-
-
 Niter = 10
+''''------------------------------------------------------------------------------------------------------------------------'''
 
-'''Visibility Paths'''
+'''-------------------------------------------Paths------------------------------------------------------------'''
 parent_dir = '/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/'
 clean_vis_path = parent_dir+'/test_data/vis-eor-fgs.uvh5'
 eor_vis_path = parent_dir+'/test_data/vis-eor.uvh5'
@@ -23,8 +22,9 @@ eor_cov_path = parent_dir+'/test_data/eor-cov.npy'
 N_cov_path = parent_dir+'/test_data/noise-cov.npy'
 noise_path = parent_dir+'/test_data/noise.npy'
 fgmodes_path = parent_dir+'/test_data/fgmodes.npy'
+'''------------------------------------------------------------------------------------------------------------------------'''
 
-'''Output paths'''
+'''Output paths (for everything other than master_plotter and plot_dps)'''
 if dummy_data_flag:
     if noise_flag:
         output_dir_path = 'outputs/'+'dummy_data_noise/'+'systematics_'+systematics_data_flag+'/'
@@ -35,8 +35,7 @@ else:
         output_dir_path = 'outputs/'+'airy_beam_noise/'+'systematics_'+systematics_data_flag+'/'
     else:
         output_dir_path = 'outputs/'+'airy_beam_no_noise/'+'systematics_'+systematics_data_flag+'/'
-
+'''------------------------------------------------------------------------------------------------------------------------'''
 
 '''Other variables'''
 num_fg_modes = 12
-nm_list=[[0, 0], [49, 0],] # [98, 0], [147, 0], [196, 0], [245, 0], [295, 0]]

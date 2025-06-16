@@ -174,93 +174,98 @@ def cholesky_inverse(A):
 def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False,iter=0):
     '''
     Parameters:
-    Binv:
-
-    d:
-        data (visbilities) flattened to a vector of shape (Nfreqs*Ntimes,)
-    N:
-        Noise covariance simplified to a vector with shape (Nfreqs*Ntimes,)
-    s:
-        sky model flattened to a vector of shape (Nfreqs*Ntimes,)
-    H:
-        Systematics basis functions with shape (Nfreqs*Ntimes,Nmodes)
+        Binv: array_like
+            Inverse of Systematics covariance (Nmodes,Nmodes)
+        d: array_like
+            data (visbilities) flattened to a vector of shape (Nfreqs*Ntimes,)
+        Ninv: array_like
+            Inverse of noise covariance matrix
+        s: array_like
+            sky model flattened to a vector of shape (Nfreqs*Ntimes,)
+        H: array_like
+            Systematics basis functions with shape (Nfreqs*Ntimes,Nmodes)
+        b_sys_past: array_like
+            Last estimate of the systematics coefficients (Nmodes,)
+        verbose: Bool
+            Verbosity of printing results
+        iter: int
+            Iteration of Gibbs sampler for plotting
+        
+    Returns:
+        b_sys: array_like
+            Vector of systematics coefficients (Nmodes,)
     '''
-    # d_exp=np.concatenate((d.real,d.imag)) #.reshape([-1,1])
-    # Bi_diag=0.01
     if verbose:
         st=time.time()
     Ntimes, Nfreqs= d.shape
     Nmodes = H.shape[1]
     
-    master_plotter([d],col_labels=[' '],fig_title='Data residual sent to gcr_sys iter'+str(iter))
-    # master_plotter([s.reshape((Ntimes,Nfreqs),order='F')],col_labels=[' '],fig_title='Sky model sent to gcr_sys iter'+str(iter))
-    d=d.flatten(order='F')
-    
-    # master_plotter([Binv],col_labels=[' '],fig_title='B inverse',imag_flag=False)
+    master_plotter([d],col_labels=[' '],fig_title='Data residual sent to gcr_sys iter'+str(iter))  #Plotting data sent into the solver
+    # master_plotter([s.reshape((Ntimes,Nfreqs),order='F')],col_labels=[' '],fig_title='Sky model sent to gcr_sys iter'+str(iter)) #Plotting the sky model     
+    # master_plotter([Binv],col_labels=[' '],fig_title='B inverse',imag_flag=False) #Plotting the Cov matrix
     
     Binv_diag=np.diag(Binv)
-    Binv_exp=np.concatenate((Binv_diag.real,Binv_diag.real))*np.eye(2*np.shape(Binv)[0]) #Binverse for the realified case
+    Binv_exp=np.concatenate((Binv_diag.real,Binv_diag.real))*np.eye(2*np.shape(Binv)[0]) #Explanded Binv for the realified case [[Binv,0],[0,Binv]]
     
-    # master_plotter([Binv_exp],col_labels=[' '],fig_title='Binv realified',imag_flag=False)
+    # master_plotter([Binv_exp],col_labels=[' '],fig_title='Binv realified',imag_flag=False) #Plotting the expanded Binv
+    
     
     diag_el=Ninv[0,0]
-    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex)  #.reshape([len(d),],order='F')
-    Nih=np.sqrt(Ninv)
-    # print("Shape of realified matrices: \n d: {},\n Binv: {}\n Nih: {}\n s.real: {}\n s.imag: {}".format(d.shape,Binv_exp.shape,Nih.shape,s.real.shape,s.imag.shape))
+    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex)
+
+    #Complex Gaussian vectors with unit variance for fluctuations     
+    om_re=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0) #Real part
+    om_im=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0) #Imaginary part
     
-    om_re=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0)
-    om_im=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0)
     
     '''eq A'''
-    Nih_sre=Nih*s.real
-    Nih_sim=Nih*s.imag
+    Nih_sre=Nih*s.real #N^-1/2 * s.real
+    Nih_sim=Nih*s.imag #N^-1/2 * s.imag
     
     # master_plotter([Nih_sre.reshape((Ntimes,Nfreqs),order='F'),Nih_sim.reshape((Ntimes,Nfreqs),order='F')],col_labels=['sqrt(Ninv)*s.real*omega.real','sqrt(Ninv)*s.imag*omega.imag'],fig_title='Nih*sre*omre comparison')
     
-    # print("Shape check 2: \n H: {}\n Nih_sre: {}\n Nih_sim: {}".format(H.shape,Nih_sre.shape,Nih_sim.shape))
+    #Making the M_tilde sub-matrix
     m11= Nih_sre[:,np.newaxis]*H.real - Nih_sim[:,np.newaxis]*H.imag
     m12= -1 *Nih_sre[:,np.newaxis]*H.imag - Nih_sim[:,np.newaxis]*H.real
     
     # master_plotter([m11,m12],col_labels=['M11 element','M12 element'],fig_title='M_tile element comparison')
 
-    nume=np.concatenate((m11,m12),axis=1)
-    denom=np.concatenate((-1*m12,m11),axis=1)
-    M_tilde=np.concatenate((nume,denom),axis=0)
+    nume=np.concatenate((m11,m12),axis=1) #Numerator of M_tilde
+    denom=np.concatenate((-1*m12,m11),axis=1) #Denominator of M_tilde
+    M_tilde=np.concatenate((nume,denom),axis=0) 
     
     # master_plotter([nume,denom],col_labels=['Real','Imaginary'],fig_title='M_tilde matrix (realified)',plot_type='matshow',imag_flag=False)
 
+    #Putting A matrix together
     A_mat= Binv_exp + M_tilde.conj().T @ M_tilde # Try einsum as an alternative
     
     # master_plotter([A_mat[:Nmodes,:],A_mat[Nmodes:,:]],col_labels=['Real','Imaginary'],fig_title='A matrix',plot_type='matshow',imag_flag=False)
 
+    nih_dre=Nih*d.real #N^-1/2 * d.real
+    nih_dim=Nih*d.imag #N^-1/2 * d.imag
 
-    nih_dre=Nih*d.real
-    nih_dim=Nih*d.imag
-
-    Nih_sre = Nih_sre*om_re 
+    #Multiplying gaussian fluctuations
+    Nih_sre = Nih_sre*om_re  
     Nih_sim = Nih_sim*om_im
     # master_plotter([nih_dre.reshape((Ntimes,Nfreqs),order='F'),nih_dim.reshape((Ntimes,Nfreqs),order='F')],col_labels=['sqrt(Ninv)*d.real','sqrt(Ninv)*d.imag'],fig_title='sqrt(Ninv)*data comparison',imag_flag=False)
 
-    # print("Component shape checks: \n m11: {}\n m12: {}\n M_tilde: {}\n nih_dre: {}\n H.real: {}\n Nih_sre: {}\n om_re: {}\n".format(m11.shape,m12.shape,M_tilde.shape, nih_dre.shape, H.real.shape, Nih_sre.shape, om_re.shape))
-    # print("Expression: m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) * om_re + (H.imag.T @ Nih_sim) * om_im \n")    
-
-    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) + (H.imag.T @ Nih_sim)
-    denom= m12.T @ nih_dre + m11.T @ nih_dim - (H.imag.T @ Nih_sre) + (H.real.T @ Nih_sim)
+    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) + (H.imag.T @ Nih_sim) #Numerator of b_mat
+    denom= m12.T @ nih_dre + m11.T @ nih_dim - (H.imag.T @ Nih_sre) + (H.real.T @ Nih_sim) #Denominator of b_mat
     
     b_mat= np.concatenate((nume, denom), axis=0)
     
-    
-    # print("Shape checks: \n A_mat: {}\n b_mat: {}".format(A_mat.shape,b_mat.shape))
-    Ai = np.linalg.inv(A_mat)
+    Ai = np.linalg.inv(A_mat) #Pseudo-inverse for preconditioning
     
     # master_plotter([Ai],col_labels=[' '],fig_title='Pseudo inverse of A matrix',plot_type='matshow',imag_flag=False)
     
     if b_sys_past is not None:
         x0=np.concatenate([b_sys_past.real,b_sys_past.imag],axis=0)
+
     b_sys,info=scipy.sparse.linalg.cgs(A_mat,b_mat, M=Ai, tol=1e-12)
+    
     residuals = np.abs(A_mat @ b_sys - b_mat).mean()
-    b_sys=b_sys[:int(len(b_sys)/2)] + 1.j* b_sys[int(len(b_sys)/2):]
-    # print("Sys time: ",f"{time.time() - st:<12.1f}")
+    b_sys=b_sys[:int(len(b_sys)/2)] + 1.j* b_sys[int(len(b_sys)/2):]  #Separating the real and imaginary components
+
     if verbose:
         print(f"{time.time() - st:<12.1f}", end="\t")
         print(f"{info:<8.1f}", end=" ")
