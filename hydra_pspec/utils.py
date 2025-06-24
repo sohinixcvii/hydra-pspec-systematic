@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-def fourier_operator(n):
+def fourier_operator(n, unitary=True):
     """
     Fourier operator for matrix side length n.
 
@@ -29,15 +29,21 @@ def fourier_operator(n):
     Parameters:
     	n (int):
     		Length of the data that the operator will be applied to.
+        unitary (bool):
+            Whether the matrix should be unitary, i.e. F^dagger F = I.
 
     Returns:
     	fourier_op (array_like):
     		Complex Fourier operator matrix of shape `(n, n)`.
     """
+    norm = 1.
+    if unitary:
+        norm = np.sqrt(n)
+
     i_x = (np.arange(n) - n//2).reshape(1, -1)
     i_k = (np.arange(n) - n//2).reshape(-1, 1)
-    fourier_op = np.exp(-2*np.pi*1j * (i_k * i_x / n))
 
+    fourier_op = np.exp(-2*np.pi*1j * (i_k * i_x / n)) / norm
     return fourier_op
 
 
