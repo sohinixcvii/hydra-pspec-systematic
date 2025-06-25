@@ -289,7 +289,7 @@ def gcr_fgmodes_1d(idx,
 
     Nfreqs, Nmodes = fgmodes.shape
     d = vis.reshape((1, max(Nfreqs, len(vis.T))))
-    
+
     # Construct necessary operators for GCR
     inner_prod = (y.conj().T * Ninv.diagonal() *  y)
     Ni_flagged = flags.T * (inner_prod) * flags  # Ni with flags and systematics sandwich
@@ -533,7 +533,7 @@ def gibbs_step_fgmodes(
     signal_ps,
     fgmodes,
     Ninv,
-    h_j,
+    sys_modes,
     b_sys_past,
     sys_model_past,
     Bi,
@@ -557,6 +557,8 @@ def gibbs_step_fgmodes(
             `(Nfreqs,)`.
         signal_ps (array_like):
             Current value of the EoR signal power spectrum.
+        sys_modes (array_like):
+            Systematics mode matrix.
         b_sys_past (array_like):
             Systematics coefficients from the last iteration of shape (number of systematics modes,)
         sys_model_past (array_like):
@@ -595,7 +597,7 @@ def gibbs_step_fgmodes(
             Array of systematics amplitudes of shape (len(nm_list))
     """
     # Shape of data and operators
-    Ntimes=vis.shape[0]
+    Ntimes = vis.shape[0]
     Nfreqs = vis.shape[1] 
     Nmodes = fgmodes.shape[1]
     Nparams = Nfreqs + Nmodes
@@ -603,12 +605,8 @@ def gibbs_step_fgmodes(
 
     # Precompute 2D Fourier operator matrix
     fourier_op = utils.fourier_operator(Nfreqs)
-
-    # Get matrices necessary for the GCR step
-    # sys_model_past=np.load('/Users/user/Documents/Codes/hydra_sys_project1/GCR_test_scripts/gain.npy',allow_pickle=False) #For loading a pre-defined, fixed gain model
-    #sys_model_past=np.ones_like(vis) #Gain == 1s everywhere
     
-    '''(1) Solve GCR equation to get EoR signal and foreground amplitude realisations'''
+    # (1) Solve GCR equation to get EoR signal and foreground amplitude realisations
     cr = gcr_fgmodes(
                     vis=vis, 
                     fgmodes=fgmodes, 
@@ -630,19 +628,6 @@ def gibbs_step_fgmodes(
     # Sky model of data is sum of EoR (GCR) + FG model
     model = (signal_cr + fg_amps @ fgmodes.T)  # np.einsum('ijk,lk->ijl', fg_amps, fgmodes) # sky model
 
-    '''1a. Solve GCR equation to obtain estimate of systematic component'''
-    '''--------------This block is for only when we are informing gcr_sys with true solution--------'''
-    #FIXME: remove the following file-loading from code
-    # uvd=UVData()
-    # uvd.read('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor-fgs.uvh5')
-    # antpairpols = uvd.get_antpairpols()    
-    # uvd = utils.form_pseudo_stokes_vis(uvd)
-    # clean_vis=uvd.get_data(antpairpols[0], force_copy=True)
-    
-    #Loading from npy file
-    #clean_vis=np.load('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/dummy_sky.npy',allow_pickle=False)
-    '''-----------------------------------------------------------------------------------------------'''
-    #master_plotter([clean_vis],col_labels=[' '],fig_title='Clean visibility loaded from file') #Plotting the clean visibility that gets loaded
     
     """
     b_sys=sys_sol.gcr_sys_v1(Binv=Bi,d=vis-clean_vis,Ninv=Ninv,s=clean_vis,H=h_j,b_sys_past=b_sys_past,verbose=verbose,iter=iter)
@@ -653,7 +638,7 @@ def gibbs_step_fgmodes(
     # sys_model += np.ones_like(sys_model, dtype='complex')  #Adding ones to the systematics solution: gain=(1+delta_g)
     """
 
-    sys_model = np.ones_like(vis) #FIXME: test code. Delete after use
+    sys_model = sys_model_past
     
     model = (sys_model * model)
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
@@ -664,40 +649,21 @@ def gibbs_step_fgmodes(
     chisq_mean = chisq[:, flags].mean()
     chisq = chisq.real
 
-    if verbose==True:
+    if verbose:
         chisq_mean = chisq[:, flags].mean()
         print(f"{chisq_mean:<9.1e}", end=" ")
     
     # FIXME
-    b_sys = 0.*b_sys_past
+    b_sys = b_sys_past
 
-    '''(2) Sample EoR signal power spectrum (and also convert to equivalent'''
+    # (2) Sample EoR signal power spectrum (and also convert to equivalent
     ps_sample = sample_pspec(s=signal_cr, prior=ps_prior)
 
     # No need for factor of 1/Nfreqs**2 here as sample_pspec() changed to iFFT normalization
-    #S_sample = covariance_from_pspec(ps_sample, fourier_op)
     Sinv_sample = covariance_from_pspec(1. / ps_sample, fourier_op) #/ Nfreqs**2. # note FFT norm
 
-    #import pylab as plt
-    #plt.subplot(111)
-    #plt.matshow(Sinv_sample.real / np.linalg.inv(S_sample).real, aspect='auto', fignum=False)
-    #plt.colorbar()
-
-    #plt.subplot(122)
-    #plt.matshow(Sinv_sample.real, aspect='auto', fignum=False)
-    #plt.colorbar()
-    #plt.gcf().set_size_inches((10., 4.))
-    #plt.show()
-
-    #S_sample = covariance_from_pspec(ps_sample / Nfreqs**2, fourier_op)
-
-    # Log posterior
-    # Each time is treated as an independent sample.  So, the joint
-    # log posterior for all times is the sum of the individual log
-    # posteriors for each time.
-    # WARNING: np.linalg.inv should be avoided for general, dense matrices.
-    # S_sample should be diagonally dominant and thus this should be okay.
-    #Sinv = np.linalg.inv(S_sample)
+    # Log posterior; each time is treated as an independent sample, so the joint
+    # ln_post for all times is the sum of the ones for each time.
     ln_post = np.sum(np.diagonal(
         -(
             (vis - (model))[:, flags].conj()
@@ -710,9 +676,10 @@ def gibbs_step_fgmodes(
             @ signal_cr[:, flags].T
         )
     ))
-    ln_post=np.real(ln_post)
+    ln_post = np.real(ln_post)
     if verbose:
         print(f"{ln_post:<12.1f}")
+    
     # Return samples
     return signal_cr, ps_sample, fg_amps, b_sys, chisq, ln_post 
 
@@ -726,7 +693,8 @@ def gibbs_sample_with_fg(
     ps_prior,
     freqs,
     lsts,
-    nm_list,
+    sys_modes,
+    bsys_initial,
     Niter=100,
     seed=None,
     verbose=True,
@@ -753,12 +721,14 @@ def gibbs_sample_with_fg(
         ps_initial (array_like):
             Initial guess for the EoR signal power spectrum. A better guess 
             should result in faster convergence.
-        nm_list (array_like):
-            List of fourier mode indices that need to be sampled. (List of modes, 2)
+        sys_modes (array_like):
+            Systematics mode array, of shape `(Nfreqs * Ntimes, Nsysmodes)`.
         fgmodes (array_like):
-            Foreground mode array, of shape (Nfreqs, Nmodes). This should be
+            Foreground mode array, of shape `(Nfreqs, Nmodes)`. This should be
             derived from a PCA decomposition of a model foreground covariance
             matrix or similar.
+        bsys_initial (array_like):
+            Initial guess of systematics parameters.
         Ninv (array_like):
             Inverse noise variance matrix. This can either have shape
             `(Ntimes, Nfreqs, Nfreqs)`, one for each time, or can be a common
@@ -814,7 +784,7 @@ def gibbs_sample_with_fg(
     # Get shape of data/foreground modes
     Ntimes, Nfreqs = vis.shape
     Nmodes = fgmodes.shape[1]
-    Nsys_modes = nm_list.shape[0]
+    Nsys_modes = sys_modes.shape[-1]
     assert flags.shape == (Nfreqs,), "`flags` array must have shape (Nfreqs,)"
     assert fgmodes.shape[0] == Nfreqs, "fgmodes must have shape (Nfreqs, Nmodes)"
     assert ps_prior.shape == (2, Nfreqs), "ps_prior must have shape (2, Nfreqs)"
@@ -846,7 +816,7 @@ def gibbs_sample_with_fg(
     # Precompute h_j systematics projection operator
     # FIXME: include path as arg in import file
     #nm_list_select = np.loadtxt('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/nm_list_select')
-    h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list) #nm_list containing dl fr values
+    #h_j = sys_sol.h_j_op(freqs=freqs,lsts=lsts,nm_list=nm_list) #nm_list containing dl fr values
     # Loop over iterations
     if verbose:
         print("Iter     Time [s]    Info    |Ax - b|    T_Sys(s)    Sys Info    Sys |Ax-b|    Chisq    ln Post")
@@ -879,12 +849,11 @@ def gibbs_sample_with_fg(
         if i > 0:
             b_sys_past = b_sys[i-1]
         else:
-            b_sys_past = np.zeros(Nsys_modes)
+            b_sys_past = bsys_initial #np.zeros(Nsys_modes)
         B_cov_inv = np.eye(Nsys_modes) # B is an identity matrix 
         
         # Calculate systematics model
-        sys_model_past = (h_j @ b_sys_past).reshape([Ntimes,Nfreqs],order='F')
-        sys_model_past += np.ones_like(sys_model_past, dtype='complex') # Implementing the 1+del g model
+        sys_model_past = 1. + (sys_modes @ b_sys_past).reshape((Nfreqs, Ntimes)).T
 
         # Do Gibbs iteration
         signal_cr[i], signal_ps[i], fg_amps[i], b_sys[i], chisq[i], ln_post[i]\
@@ -895,7 +864,7 @@ def gibbs_sample_with_fg(
                 fgmodes=fgmodes,
                 Ninv=Ninv,
                 Bi=B_cov_inv,
-                h_j=h_j,
+                sys_modes=sys_modes,
                 b_sys_past=b_sys_past,
                 sys_model_past=sys_model_past,
                 ps_prior=ps_prior,

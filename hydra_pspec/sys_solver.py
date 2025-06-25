@@ -10,72 +10,83 @@ import scipy
 import time
 from .plotting_functions import master_plotter
 
-def fourier_2d(freqs,times):
-    F, T = np.meshgrid(freqs, times)
 
-    n_freq = len(freqs)
-    n_time = len(times)
-    delta_f = freqs[1] - freqs[0]
-    delta_t = times[1] - times[0]
-
-    # Creating the delay and fringe_rate axes
-    delay = np.fft.fftfreq(n_freq, delta_f)
-    fringe_rate = np.fft.fftfreq(n_time, delta_t)
-
-    # Creating the Fourier space grid
-    DELAY, FR = np.meshgrid(delay, fringe_rate)
-    return DELAY,FR
-
-def fourier_mode_2d_udf(freqs, times, nfreq, ntime, freq0=None, time0=None, shape0=None):
-    
+def fourier_mode_2d(freqs_Hz, times_sec, modes, box=None):
     """
     Construct a set of 2D Fourier modes from a list of wavenumber integers, 
     to form an incomplete set of 2D Fourier modes.
+
+    Parameters
+    ----------
+    freqs_Hz (array_like):
+        Frequency array, in Hz. Should be ordered.
+        
+    times_sec (array_like):
+        Time array, in hours. Should be ordered.
+
+    modes (list of tuple of int):
+        List of mode integer pairs to include in operator.
+
+    box (tuple of tuple):
+        NOT IMPLEMENTED
+        Keep all modes within a box, defined by the tuple:
+        `((delay_min, delay_max), (frate_min, frate_max))`.
+        The delays are in ns and the fringe rates in mHz.
     """
-    # print("Modes: {}".format([ntime,nfreq]))
-    freqs=freqs*1e-9
+    Nfreqs, Ntimes = freqs_Hz.size, times_sec.size
+    
+    # Get grid spacing in expected units
+    dfreq = (freqs_Hz[1] - freqs_Hz[0])
+    dtime = (times_sec[1] - times_sec[0])
 
-    # Decide on origin of frequency axis for FT
-    if time0 is None:
-        time0 = times[0]
-    if freq0 is None:
-        freq0 = freqs[0]
+    # Get FFT wavenumbers
+    kfreq = np.fft.fftfreq(Nfreqs, d=dfreq) # sec #* 1e9 # ns
+    ktime = np.fft.fftfreq(Ntimes, d=dtime) # Hz * 1e3 # mHz
 
-    # Determine normalising factors. If being used as a standalone Fourier operator, 
-    # these are just the lengths of the freq and time arrays. If being used as a 
-    # chunk of a Fourier operator across multiple workers, use the overall shape 
-    # from 'shape0'
-    if shape0 is None:
-        Nfreqs = freqs.size
-        Ntimes = times.size
-    else:
-        Nfreqs, Ntimes = shape0
+    # Get FFT mode integers
+    nfreq = (np.fft.fftfreq(Nfreqs) * Nfreqs).astype(int)
+    ntime = (np.fft.fftfreq(Ntimes) * Ntimes).astype(int)
 
-    # Build grid of freqs and times
-    nfreq = np.atleast_1d(nfreq)
-    ntime = np.atleast_1d(ntime)
-    assert len(nfreq.shape) == 1
-    assert len(ntime.shape) == 1
-    assert len(freqs.shape) == 1
-    assert len(times.shape) == 1
-    t2d, f2d = np.meshgrid(times - time0, freqs - freq0)
+    # Frequency/time grids with respect to origin
+    f = freqs_Hz - freqs_Hz[0]
+    t = times_sec - times_sec[0]
 
-    # Calculate wavenumbers for each mode
-    kfreq =(2 * np.pi * nfreq)
-    ktime = (2 * np.pi * ntime)
+    # Get indices of modes we want to keep
+    basis_fns = np.zeros((len(modes), Nfreqs, Ntimes), dtype=np.complex128)
+    for i, mode in enumerate(modes):
+        nf, nt = mode
+        print(nf, nt)
+        assert isinstance(nf, int), "modes must only contain pairs of integers"
+        assert isinstance(nt, int), "modes must only contain pairs of integers"
+        assert nf in nfreq, "Delay mode nf=%d not in available range (%d -- %d)." \
+            % (nf, nfreq.min(), nfreq.max())
+        assert nt in ntime, "Fringe rate mode nt=%d not in available range (%d -- %d)." \
+            % (nt, ntime.min(), ntime.max())
 
-    # Shape: (Nmodes, Nfreqs, Ntimes)
-    basis_fns = np.exp(1.j \
-                        * (  (kfreq[:,np.newaxis,np.newaxis] * f2d[np.newaxis,:,:]) \
-                           + (ktime[:,np.newaxis,np.newaxis] * t2d[np.newaxis,:,:])) ) \
-              / np.sqrt(Nfreqs * Ntimes)
-    return basis_fns
+        # Get mode indices
+        idx_f = np.where(nfreq == nf)[0][0]
+        idx_t = np.where(ntime == nt)[0][0]
+        #mode_idxs.append( (idx_f, idx_t) )
 
-#Function defining the U_sys operator
-def h_j_op(freqs,lsts,nm_list):
-    '''loop through the nm_list'''
-    u=np.array([fourier_mode_2d_udf(freqs,lsts,n,m).flatten() for n,m in nm_list])
-    return u.T
+        print(kfreq[idx_f], ktime[idx_t])
+
+        # Add basis function to operator
+        basis_fns[i] = np.exp(2.*np.pi*1.j * (  kfreq[idx_f] * f[:,np.newaxis]
+                                     + ktime[idx_t] * t[np.newaxis,:] ) ) \
+                     / np.sqrt(Nfreqs * Ntimes)
+        
+    return basis_fns, kfreq * 1e9, ktime * 1e3
+
+
+def sys_modes(freqs_Hz, times_sec, modes):
+    """
+    Construct systematic mode operator, which is a 2D Fourier basis.
+    """
+    u, kfreq, ktime = fourier_mode_2d(freqs_Hz=freqs_Hz, 
+                                      times_sec=times_sec, 
+                                      modes=modes)
+    return u.reshape((u.shape[0], -1)).T
+
 
 def sq_mat_tr(A,flag='r'):
     '''

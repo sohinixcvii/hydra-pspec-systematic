@@ -107,17 +107,14 @@ plt.xlabel("Fourier mode idx")
 plt.ylabel("PS")
 plt.gcf().set_size_inches((10., 8.))
 plt.show()
-
-
 exit()
 """
 
-
+# Define power spectrum prior range and draw sample of PS from EoR field
 ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
                              1e-1 * np.ones(freqs.size)) )
 ps_sample = hp.pspec.sample_pspec(s=eor_true.T, prior=ps_prior)
 
-print("ps_sample", ps_sample.shape)
 
 # No need for factor of 1/Nfreqs**2 here as sample_S() changed to iFFT normalization
 S_sample = hp.pspec.covariance_from_pspec(ps_sample, fourier_op)
@@ -136,7 +133,7 @@ exit()
 """
 
 # Generate noise
-noise_ps_val = 0.00004 # 0.0004
+noise_ps_val = 0.000004 # 0.0004
 noise_ps_true = noise_ps_val * np.ones(freqs.size)
 N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
 Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
@@ -175,8 +172,40 @@ plt.gcf().set_size_inches((10., 8.))
 plt.show()
 """
 
+
+# Build systematics model
+nm_list = [(0, 0), (1, 0)]
+lsts = np.linspace(0., 1., Ntimes)
+sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6, 
+                                    times_sec=lsts * 24./(2.*np.pi) * 3600., 
+                                    modes=nm_list)
+bsys_true = np.array([0., 0.])
+gain_true = (1. + sys_modes @ bsys_true).reshape((freqs.size, Ntimes))
+
+"""
+plt.subplot(221)
+plt.matshow(sys_modes[:,0].real.reshape((freqs.size, Ntimes)), aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.subplot(222)
+plt.matshow(sys_modes[:,1].real.reshape((freqs.size, Ntimes)), aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.subplot(223)
+plt.matshow(gain_true.real, aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.subplot(224)
+plt.matshow(gain_true.imag, aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.show()
+exit()
+"""
+
+
 # Combine together into data
-d = fg_true + eor_true + n
+d = gain_true * (fg_true + eor_true) + n
 
 """
 plt.subplot(121)
@@ -209,7 +238,7 @@ signal_cr, signal_ps, fg_amps, b_sys, chisq, ln_post = \
             fgmodes = fgmodes,
             Ninv = Ninv,
             ps_prior = ps_prior,
-            Niter=4,
+            Niter=45,
             seed=10,
             map_estimate=False,
             verbose=True,
@@ -218,10 +247,36 @@ signal_cr, signal_ps, fg_amps, b_sys, chisq, ln_post = \
             out_dir='./phil_test_outdir',
             freqs=freqs,
             lsts=np.linspace(0., 1., Ntimes),
-            nm_list=np.array([(0,0)]),
+            sys_modes=sys_modes,
+            bsys_initial=bsys_true
         )
 
 
+
+# Plot data residual
+model = (signal_cr[-1] + fg_amps[-1] @ fgmodes.T)
+
+"""
+# Show model and residual
+plt.subplot(141)
+plt.matshow(model.real, aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.subplot(142)
+plt.matshow(d.real.T, aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.subplot(143)
+plt.matshow(d.real.T - model.real, aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.subplot(144)
+plt.matshow(eor_true.real.T, aspect='auto', fignum=False)
+plt.colorbar()
+
+plt.gcf().set_size_inches((12., 4.))
+plt.show()
+"""
 #print(signal_ps)
 
 """
@@ -258,8 +313,9 @@ for i in range(4):
     #plt.plot(eor_true.T[i].real, color='k')
     #plt.plot(signal_cr[0,i].real, ls='dashed')
 
-    plt.plot(signal_cr[0,i].real - eor_true.T[i].real)
+    plt.plot(signal_cr[-1,i].real - eor_true.T[i].real)
 
+print(signal_cr.shape)
 
 plt.subplot(122)
 plt.plot(ps_true, 'k-')
