@@ -182,107 +182,120 @@ def cholesky_inverse(A):
     
     return A_inv
 
-def gcr_sys_v1(Binv,d,Ninv,s,H, b_sys_past=None, verbose=False,iter=0):
-    '''
+def gcr_systematics(data,
+                    Ninv,
+                    sky_model, 
+                    sys_modes,
+                    sys_prior, 
+                    solver_tol=1e-12,
+                    verbose=False):
+    """
+    Gaussian constrained realisation sampler for a multiplicative 
+    systematics model.
+
     Parameters:
-        Binv: array_like
-            Inverse of Systematics covariance (Nmodes,Nmodes)
-        d: array_like
-            data (visbilities) shape (Nfreqs,Ntimes)
-        Ninv: array_like
-            Inverse of noise covariance matrix
-        s: array_like
-            sky model (Nfreqs,Ntimes)
-        H: array_like
-            Systematics basis functions with shape (Nfreqs*Ntimes,Nmodes)
-        b_sys_past: array_like
-            Last estimate of the systematics coefficients (Nmodes,)
+        data (array_like):
+            Data visibilities. This is the residual after subtracting off the 
+        Ninv (array_like):
+            Inverse of noise covariance matrix. This can either have shape
+            `(Ntimes, Nfreqs, Nfreqs)`, one for each time, or can be a common
+            one for all times with shape `(Nfreqs, Nfreqs)`.
+        sky_model (array_like):
+            Sky model (Nfreqs, Ntimes)
+        sys_modes (array_like):
+            Systematics basis functions with shape `(Nfreqs*Ntimes, Nsys_modes)`.
+        sys_prior (array_like):
+            Systematic coefficient prior covariance matrix, of shape 
+            `(Nsys_modes, Nsys_modes)`.
+        solver_tol (float):
+            Tolerance for the scipy linear solvers.
         verbose: Bool
             Verbosity of printing results
-        iter: int
-            Iteration of Gibbs sampler for plotting
         
     Returns:
-        b_sys: array_like
-            Vector of systematics coefficients (Nmodes,)
-    '''
+        sys_amps: array_like
+            Sampled vector of systematics coefficients. Shape `(Nsys_modes,)`.
+    """
     if verbose:
-        st=time.time()
-    Ntimes, Nfreqs= d.shape
-    Nmodes = H.shape[1]
-    master_plotter([d],col_labels=[' '],fig_title='Data residual sent to gcr_sys iter'+str(iter))  #Plotting data sent into the solver    
-    #Flattening datasets for operation
-    d=d.flatten(order='F')
-    s=s.flatten(order='F')
-    # master_plotter([s.reshape((Ntimes,Nfreqs),order='F')],col_labels=[' '],fig_title='Sky model sent to gcr_sys iter'+str(iter)) #Plotting the sky model     
-    # master_plotter([Binv],col_labels=[' '],fig_title='B inverse',imag_flag=False) #Plotting the Cov matrix
+        t_start = time.time()
     
-    Binv_diag=np.diag(Binv)
-    Binv_exp=np.concatenate((Binv_diag.real,Binv_diag.real))*np.eye(2*np.shape(Binv)[0]) #Explanded Binv for the realified case [[Binv,0],[0,Binv]]
-    
-    # master_plotter([Binv_exp],col_labels=[' '],fig_title='Binv realified',imag_flag=False) #Plotting the expanded Binv
-    
-    
-    diag_el=Ninv[0,0]
-    Ninv=diag_el*np.ones(shape=Ntimes*Nfreqs, dtype=complex)
-    Nih=np.sqrt(Ninv)
+    Ntimes, Nfreqs= data.shape
+    Nsys_modes = sys_modes.shape[1]
 
-    #Complex Gaussian vectors with unit variance for fluctuations     
-    om_re=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0) #Real part
-    om_im=np.random.normal(size=(Nfreqs*Ntimes),scale=1/np.sqrt(2),loc=0) #Imaginary part
-    
-    
-    '''eq A'''
-    Nih_sre=Nih*s.real #N^-1/2 * s.real
-    Nih_sim=Nih*s.imag #N^-1/2 * s.imag
-    
-    # master_plotter([Nih_sre.reshape((Ntimes,Nfreqs),order='F'),Nih_sim.reshape((Ntimes,Nfreqs),order='F')],col_labels=['sqrt(Ninv)*s.real*omega.real','sqrt(Ninv)*s.imag*omega.imag'],fig_title='Nih*sre*omre comparison')
-    
-    #Making the M_tilde sub-matrix
-    m11= Nih_sre[:,np.newaxis]*H.real - Nih_sim[:,np.newaxis]*H.imag
-    m12= -1 *Nih_sre[:,np.newaxis]*H.imag - Nih_sim[:,np.newaxis]*H.real
-    
-    # master_plotter([m11,m12],col_labels=['M11 element','M12 element'],fig_title='M_tile element comparison')
+    # Get the data residual r = d - sky_model = g sky_model, since our 
+    # parametrisation is d = (1 + g) sky_model.
+    resid = data - sky_model
 
-    nume=np.concatenate((m11,m12),axis=1) #Numerator of M_tilde
-    denom=np.concatenate((-1*m12,m11),axis=1) #Denominator of M_tilde
-    M_tilde=np.concatenate((nume,denom),axis=0) 
+    # Flatten the data for operation
+    # FIXME: Do we need to specify F ordering?
+    r = resid.flatten(order='F')
+    s = sky_model.flatten(order='F')
     
-    # master_plotter([nume,denom],col_labels=['Real','Imaginary'],fig_title='M_tilde matrix (realified)',plot_type='matshow',imag_flag=False)
 
-    #Putting A matrix together
-    A_mat= Binv_exp + M_tilde.conj().T @ M_tilde # Try einsum as an alternative
+    # Invert prior covariance. This will be used to implement a block diagonal 
+    # inverse prior covariance, [[Binv, 0],[0, Binv]] (for real/imag split linear system)
+    Binv = np.linalg.pinv(sys_prior) # pseudo-inverse
     
-    # master_plotter([A_mat[:Nmodes,:],A_mat[Nmodes:,:]],col_labels=['Real','Imaginary'],fig_title='A matrix',plot_type='matshow',imag_flag=False)
+    diag_el = Ninv[0,0]
+    Ninv = diag_el * np.ones(shape=Ntimes*Nfreqs, dtype=complex)
+    sqrtNinv = np.sqrt(Ninv)
 
-    nih_dre=Nih*d.real #N^-1/2 * d.real
-    nih_dim=Nih*d.imag #N^-1/2 * d.imag
+    # Complex Gaussian vectors with unit variance for fluctuations
+    omega_d_re = np.random.normal(size=(Nfreqs*Ntimes)) / np.sqrt(2) # Real part
+    omega_d_im = np.random.normal(size=(Nfreqs*Ntimes)) / np.sqrt(2) # Imaginary part
+    
+    # Construct the M_tilde sub-matrix
+    sqrtNinv_s_re = sqrtNinv * s.real # N^-1/2 * s.real
+    sqrtNinv_s_im = sqrtNinv * s.imag # N^-1/2 * s.imag
+    m11 = sqrtNinv_s_re[:,np.newaxis] * sys_modes.real \
+        - sqrtNinv_s_im[:,np.newaxis] * sys_modes.imag
+    m12 = -1. * sqrtNinv_s_re[:,np.newaxis] * sys_modes.imag \
+          -1. * sqrtNinv_s_im[:,np.newaxis] * sys_modes.real
 
-    #Multiplying gaussian fluctuations
-    Nih_sre = Nih_sre*om_re  
-    Nih_sim = Nih_sim*om_im
-    # master_plotter([nih_dre.reshape((Ntimes,Nfreqs),order='F'),nih_dim.reshape((Ntimes,Nfreqs),order='F')],col_labels=['sqrt(Ninv)*d.real','sqrt(Ninv)*d.imag'],fig_title='sqrt(Ninv)*data comparison',imag_flag=False)
+    #M_tilde = np.zeros((2*))
+    M_tilde = np.concatenate((np.concatenate((m11, m12), axis=1), 
+                              np.concatenate((-1*m12, m11), axis=1)),
+                             axis=0) 
 
-    nume= m11.T @ nih_dre + -1 * m12.T @nih_dim + (H.real.T @ Nih_sre) + (H.imag.T @ Nih_sim) #Numerator of b_mat
-    denom= m12.T @ nih_dre + m11.T @ nih_dim - (H.imag.T @ Nih_sre) + (H.real.T @ Nih_sim) #Denominator of b_mat
+    # Construct A matrix
+    A = M_tilde.conj().T @ M_tilde
+    A[:Nsys_modes, :Nsys_modes] += Binv
+    A[Nsys_modes:, Nsys_modes:] += Binv
     
-    b_mat= np.concatenate((nume, denom), axis=0)
-    
-    Ai = np.linalg.inv(A_mat) #Pseudo-inverse for preconditioning
-    
-    # master_plotter([Ai],col_labels=[' '],fig_title='Pseudo inverse of A matrix',plot_type='matshow',imag_flag=False)
-    
-    if b_sys_past is not None:
-        x0=np.concatenate([b_sys_past.real,b_sys_past.imag],axis=0)
+    nih_dre = sqrtNinv * r.real #N^-1/2 * resid.real
+    nih_dim = sqrtNinv * r.imag #N^-1/2 * resid.imag
 
-    b_sys,info=scipy.sparse.linalg.cgs(A_mat,b_mat, M=Ai, tol=1e-12)
+    # Multiplying gaussian fluctuations
+    sqrtNinv_s_re = sqrtNinv_s_re * omega_d_re  
+    sqrtNinv_s_im = sqrtNinv_s_im * omega_d_im
+
+    # Construct b vector (blocks for the real and imaginary parts)
+    b_re = m11.T @ nih_dre \
+         - m12.T @ nih_dim \
+         + (sys_modes.real.T @ sqrtNinv_s_re) \
+         + (sys_modes.imag.T @ sqrtNinv_s_im)
+    b_im = m12.T @ nih_dre \
+         + m11.T @ nih_dim \
+         - (sys_modes.imag.T @ sqrtNinv_s_re) \
+         + (sys_modes.real.T @ sqrtNinv_s_im)
+    b = np.concatenate((b_re, b_im), axis=0)
     
-    residuals = np.abs(A_mat @ b_sys - b_mat).mean()
-    b_sys=b_sys[:int(len(b_sys)/2)] + 1.j* b_sys[int(len(b_sys)/2):]  #Separating the real and imaginary components
+    # Try to construct preconditioner from pseudo-inverse
+    Ai = np.linalg.pinv(A)
+
+    # Run linear solver
+    sys_amps, info = scipy.sparse.linalg.cgs(A, b, M=Ai, tol=1e-12)
+    
+    # Calculate |Ax - b|
+    residuals = np.sqrt(np.sum(np.abs(A @ sys_amps - b)**2.))
+    
+    # Re-pack separate real and imaginary parts into complex vector
+    sys_amps = 1.0 * sys_amps[:Nsys_modes] \
+             + 1.j * sys_amps[Nsys_modes:]
 
     if verbose:
-        print(f"{time.time() - st:<12.1f}", end="\t")
+        print(f"{time.time() - t_start:<12.1f}", end="\t")
         print(f"{info:<8.1f}", end=" ")
         print(f"{residuals:<12.2e}", end="")
     
-    return b_sys
+    return sys_amps

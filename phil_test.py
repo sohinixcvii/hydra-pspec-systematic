@@ -133,7 +133,7 @@ exit()
 """
 
 # Generate noise
-noise_ps_val = 0.000004 # 0.0004
+noise_ps_val = 0.00004 # 0.0004
 noise_ps_true = noise_ps_val * np.ones(freqs.size)
 N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
 Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
@@ -174,13 +174,15 @@ plt.show()
 
 
 # Build systematics model
-nm_list = [(0, 0), (1, 0)]
+nm_list = [(0, 2), (10, 4)]
 lsts = np.linspace(0., 1., Ntimes)
 sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6, 
                                     times_sec=lsts * 24./(2.*np.pi) * 3600., 
                                     modes=nm_list)
-bsys_true = np.array([0., 0.])
-gain_true = (1. + sys_modes @ bsys_true).reshape((freqs.size, Ntimes))
+sys_amps_true = np.array([4., 4.01])
+sys_prior = 4.**2. * np.eye(sys_amps_true.size)
+
+gain_true = (1. + sys_modes @ sys_amps_true).reshape((freqs.size, Ntimes))
 
 """
 plt.subplot(221)
@@ -230,15 +232,15 @@ ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
 print("PS:", ps_prior.shape, ps_true.shape)
 
 
-signal_cr, signal_ps, fg_amps, b_sys, chisq, ln_post = \
-        hp.pspec.gibbs_sample_with_fg(
+signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
+        hp.pspec.gibbs_sample(
             vis = d.T,
             flags = np.ones(freqs.size, dtype=int),
-            ps_initial = ps_true,
-            fgmodes = fgmodes,
+            signal_ps_initial = ps_true,
+            fg_modes = fgmodes,
             Ninv = Ninv,
-            ps_prior = ps_prior,
-            Niter=45,
+            signal_ps_prior = ps_prior,
+            Niter=200,
             seed=10,
             map_estimate=False,
             verbose=True,
@@ -248,13 +250,15 @@ signal_cr, signal_ps, fg_amps, b_sys, chisq, ln_post = \
             freqs=freqs,
             lsts=np.linspace(0., 1., Ntimes),
             sys_modes=sys_modes,
-            bsys_initial=bsys_true
+            sys_prior=sys_prior,
+            sys_initial=sys_amps_true,
+            solver_tol=1e-12
         )
 
 
 
 # Plot data residual
-model = (signal_cr[-1] + fg_amps[-1] @ fgmodes.T)
+model = (signal_amps[-1] + fg_amps[-1] @ fgmodes.T)
 
 """
 # Show model and residual
@@ -308,17 +312,30 @@ for i in range(fg_amps_true.shape[0]):
 plt.show()
 """
 
-plt.subplot(121)
+plt.subplot(131)
 for i in range(4):
     #plt.plot(eor_true.T[i].real, color='k')
     #plt.plot(signal_cr[0,i].real, ls='dashed')
 
-    plt.plot(signal_cr[-1,i].real - eor_true.T[i].real)
+    plt.plot(signal_amps[-1,i].real - eor_true.T[i].real)
 
-print(signal_cr.shape)
+plt.xlabel("Freq. idx.", fontsize=14)
+plt.ylabel("Signal residual (last sample)", fontsize=14)
 
-plt.subplot(122)
+plt.subplot(132)
 plt.plot(ps_true, 'k-')
-plt.plot(signal_ps.T, 'r-', alpha=0.3)
+plt.plot(signal_ps.T, 'r-', alpha=0.1)
+plt.xlabel("Delay idx.", fontsize=14)
+plt.ylabel("Delay spectrum", fontsize=14)
 
+plt.subplot(133)
+colours = ['r', 'b', 'g', 'y', 'c', 'm']
+for i in range(sys_amps.shape[1]):
+    plt.plot(sys_amps[:,i], color=colours[i], alpha=0.5)
+    plt.axhline(sys_amps_true[i], color=colours[i], ls='dashed')
+plt.xlabel("Sample no.", fontsize=14)
+plt.ylabel("Sys. mode amplitude", fontsize=14)
+
+plt.gcf().set_size_inches((15., 4.))
+plt.tight_layout()
 plt.show()
