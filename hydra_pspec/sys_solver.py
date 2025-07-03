@@ -281,10 +281,21 @@ def gcr_systematics(data,
     b = np.concatenate((b_re, b_im), axis=0)
     
     # Try to construct preconditioner from pseudo-inverse
-    Ai = np.linalg.pinv(A)
+    Ainv_estimate = np.linalg.pinv(A)
 
     # Run linear solver
-    sys_amps, info = scipy.sparse.linalg.cgs(A, b, M=Ai, tol=1e-12)
+    sys_amps, info = scipy.sparse.linalg.cgs(A, b, M=Ainv_estimate, tol=solver_tol)
+
+    # Check solution
+    if info > 0:
+        # Try again with different solver
+        xsoln, info = sp.sparse.linalg.bicgstab(A, b, M=Ainv_estimate, tol=solver_tol)
+        if info != 0:
+            raise ValueError("GCR solver failed after retry; info %d" \
+                             % info)
+    if info < 0:
+        raise ValueError("GCR solver failed; info %d" \
+                         % info)
     
     # Calculate |Ax - b|
     residuals = np.sqrt(np.sum(np.abs(A @ sys_amps - b)**2.))

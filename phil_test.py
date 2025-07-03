@@ -133,7 +133,7 @@ exit()
 """
 
 # Generate noise
-noise_ps_val = 0.00004 # 0.0004
+noise_ps_val = 0.0005 #0.0015 #0.00004 # 0.0004
 noise_ps_true = noise_ps_val * np.ones(freqs.size)
 N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
 Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
@@ -170,11 +170,11 @@ plt.xlabel("Fourier mode idx")
 plt.ylabel("PS")
 plt.gcf().set_size_inches((10., 8.))
 plt.show()
+exit()
 """
 
-
 # Build systematics model
-nm_list = [(0, 2), (10, 4)]
+nm_list = [(5, 2), (10, 4)]
 lsts = np.linspace(0., 1., Ntimes)
 sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6, 
                                     times_sec=lsts * 24./(2.*np.pi) * 3600., 
@@ -240,7 +240,7 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             fg_modes = fgmodes,
             Ninv = Ninv,
             signal_ps_prior = ps_prior,
-            Niter=200,
+            Niter=40,
             seed=10,
             map_estimate=False,
             verbose=True,
@@ -252,7 +252,7 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             sys_modes=sys_modes,
             sys_prior=sys_prior,
             sys_initial=sys_amps_true,
-            solver_tol=1e-12
+            solver_tol=1e-10
         )
 
 

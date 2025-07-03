@@ -285,7 +285,7 @@ def gcr_fg_and_signal_per_time(idx,
     """
     # Set parallel-safe random seed
     pid = current_process().pid
-    seed = multiprocess_seed + pid*1000 + idx
+    seed = None # FIXME: multiprocess_seed + pid*1000 + idx
     np.random.seed(seed)
 
     Nfreqs, Nmodes = fg_modes.shape
@@ -335,15 +335,20 @@ def gcr_fg_and_signal_per_time(idx,
     
     # Run CG solver, preconditioned by M ~ A^-1
     x0 = None
-    xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol) #maxiter=int(1e5) , rtol=1e-12 , x0=x0, M=Ai
+    xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol)
     
     # Check solution
     if info > 0:
         # Try again with different solver
-        xsoln, info = sp.sparse.linalg.bicgstab(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol)
-        if info != 0:
-            raise ValueError("GCR solver failed after retry; pid %d, time idx %d, info %d" \
-                             % (pid, idx, info))
+        xsoln, info2 = sp.sparse.linalg.bicgstab(A, 
+                                                 b, 
+                                                 x0=x0, 
+                                                 M=Ainv_estimate, 
+                                                 tol=solver_tol, 
+                                                 maxiter=8000)
+        if info2 != 0:
+            raise ValueError("GCR solver failed after retry; pid %d, time idx %d, info %d, info2 %d" \
+                             % (pid, idx, info, info2))
     if info < 0:
         raise ValueError("GCR solver failed; pid %d, time idx %d, info %d" \
                          % (pid, idx, info))
@@ -427,6 +432,33 @@ def gcr_fg_and_signal(
     # Run GCR solver on each time sample in parallel
     if verbose:
         t_start = time.time()
+    
+    # FIXME
+    samples = []
+    residuals = []
+    info = []
+    for idx in time_idxs:
+        _s, _r, _i = gcr_fg_and_signal_per_time(
+                idx=idx,
+                vis=vis[idx],
+                fg_modes=fg_modes,
+                Nparams=Nparams,
+                sys_model=sys_model[idx],
+                flags=flags,
+                Einv=Einv,
+                sqrtE=sqrtE,
+                Ninv=Ninv,
+                sqrtNinv=sqrtNinv, 
+                map_estimate=map_estimate,
+                solver_tol=solver_tol,
+                verbose=verbose,
+                multiprocess_seed=100000
+            )
+        samples.append(_s)
+        residuals.append(_r)
+        info.append(_i)
+
+    """
     with Pool(nproc) as pool:
         samples, residuals,  info = zip(*pool.map(
             lambda idx: gcr_fg_and_signal_per_time(
@@ -448,13 +480,14 @@ def gcr_fg_and_signal(
             time_idxs,
         )
         )
+    """
     samples = np.array(samples).reshape((vis.shape[0], -1))
     residuals = np.array(residuals)
     info = np.array(info)
 
     # Return sample
     if verbose:
-        print(f"{time.time() - t_start:<12.1f}", end="")
+        print(f"{time.time() - t_start:<12.4f}", end="")
         print(f"{info.mean():<8.1f}", end="")
         print(f"{residuals.mean():<12.2e}", end="")
     return samples
@@ -478,6 +511,7 @@ def goodness_of_fit_statistics(data,
                                Ninv, 
                                signal_amps, 
                                Sinv, 
+                               include_prior=False,
                                verbose=False):
     """
     Calculate the chi^2 and log-posterior for a given model.
@@ -519,8 +553,12 @@ def goodness_of_fit_statistics(data,
 
     if verbose:
         chisq_mean = chisq[:, flags].mean()
-        print(f"{chisq_mean:<9.1e}", end=" ")
+        print(f"{chisq_mean:<9.3e}", end=" ")
 
+    # Whether to include the prior term in ln_post
+    use_prior = 0.
+    if include_prior:
+        use_prior = 1.
 
     # Log posterior; each time is treated as an independent sample, so the joint
     # ln_post for all times is the sum of the ones for each time.
@@ -530,11 +568,11 @@ def goodness_of_fit_statistics(data,
             @ Ninv[flags][:, flags]
             @ (data - data_model)[:, flags].T
         )
-        - (
-            signal_amps[:, flags].conj()
-            @ Sinv[flags][:, flags]
-            @ signal_amps[:, flags].T
-        )
+        #- use_prior*(
+        #    signal_amps[:, flags].conj()
+        #    @ Sinv[flags][:, flags]
+        #    @ signal_amps[:, flags].T
+        #)
     ))
     ln_post = np.real(ln_post)
     if verbose:
@@ -553,7 +591,11 @@ def gibbs_step(
     sys_amps,
     sys_prior,
     iter,
+    sky_model=None,
     nproc=1,
+    sample_systematics=True,
+    sample_eor_fg=True,
+    sample_signal_ps=True,
     map_estimate=False,
     solver_tol=1e-12,
     verbose=True
@@ -590,8 +632,15 @@ def gibbs_step(
             `(Nsys_modes, Nsys_modes)`.
         iter (int):
             Nth Gibbs sampler iteration (for plotting)
+        sky_model (array_like):
+            Sky model to use if the signal + FG GCR sampling step is switched off. 
+            Otherwise, it will be overwritten in the first conditional sampling step.
         nproc (int):
             Number of processes to use for parallelised functions.
+        sample_systematics (bool):
+            Whether to sample systematics model parameters or keep them fixed.
+        sample_signal_ps (bool):
+            Whether to sample the signal power spectrum.
         map_estimate (bool):
             Provide the maximum a posteriori sample.
         solver_tol (float):
@@ -623,44 +672,59 @@ def gibbs_step(
     # Note: Be very careful which order this is reshaped!
     sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes)).T
 
-    # (1) Sample signal and foreground amplitudes using GCR
-    cr = gcr_fg_and_signal(
-                    vis=vis, 
-                    fg_modes=fg_modes, 
-                    Nparams=Nparams, 
-                    sys_model=sys_model, 
-                    flags=flags, 
-                    signal_ps=signal_ps, 
-                    Ninv=Ninv,
-                    fourier_op=fourier_op, 
-                    nproc=nproc, 
-                    map_estimate=map_estimate,
-                    solver_tol=solver_tol,
-                    verbose=verbose)   #Running test on the d=(1+delta g)s+n form of the equations 
-    
-    # Extract separate signal and FG parts from the solution
-    signal_amps = cr[:, :-Nfg_modes]
-    fg_amps = cr[:, -Nfg_modes:]
-    
-    # Update sky model (without multiplicative systematics); sum of EoR + FG model
-    sky_model = (signal_amps + fg_amps @ fg_modes.T)
+    if sample_eor_fg:
+        # (1) Sample signal and foreground amplitudes using GCR
+        cr = gcr_fg_and_signal(
+                        vis=vis, 
+                        fg_modes=fg_modes, 
+                        Nparams=Nparams, 
+                        sys_model=sys_model, 
+                        flags=flags, 
+                        signal_ps=signal_ps, 
+                        Ninv=Ninv,
+                        fourier_op=fourier_op, 
+                        nproc=nproc, 
+                        map_estimate=map_estimate,
+                        solver_tol=solver_tol,
+                        verbose=verbose)   #Running test on the d=(1+delta g)s+n form of the equations 
+        
+        # Extract separate signal and FG parts from the solution
+        signal_amps = cr[:, :-Nfg_modes]
+        fg_amps = cr[:, -Nfg_modes:]
+        
+        # Update sky model (without multiplicative systematics); sum of EoR + FG model
+        sky_model = (signal_amps + fg_amps @ fg_modes.T)
+    else:
+        signal_amps = 0.
+        fg_amps = 0.
+
+    #import pylab as plt
+    #plt.matshow(sky_model.real)
+    #plt.colorbar()
+    #plt.show()
 
 
     # (2) Sample multiplicative systematics parameters
-    sys_amps = sys_sol.gcr_systematics(
-                                data=vis,
-                                Ninv=Ninv,
-                                sky_model=sky_model, 
-                                sys_modes=sys_modes,
-                                sys_prior=sys_prior, 
-                                verbose=verbose
-                                )
-
+    if sample_systematics:
+        sys_amps = sys_sol.gcr_systematics(
+                                    data=vis,
+                                    Ninv=Ninv,
+                                    sky_model=sky_model, 
+                                    sys_modes=sys_modes,
+                                    sys_prior=sys_prior, 
+                                    verbose=verbose
+                                    )
+    
     # (3) Sample EoR signal power spectrum (and also convert to signal covariance matrix)
-    signal_ps_sample = sample_pspec(s=signal_amps, prior=signal_ps_prior)
+    if sample_signal_ps:
+        signal_ps_sample = sample_pspec(s=signal_amps, prior=signal_ps_prior)
 
-    # No need for factor of 1/Nfreqs**2 here as sample_pspec() changed to iFFT normalization
-    Sinv_sample = covariance_from_pspec(1. / signal_ps_sample, fourier_op) #/ Nfreqs**2. # note FFT norm
+        # No need for factor of 1/Nfreqs**2 here as sample_pspec() changed to iFFT normalization
+        Sinv_sample = covariance_from_pspec(1. / signal_ps_sample, fourier_op) #/ Nfreqs**2. # note FFT norm
+    else:
+        signal_ps_sample = signal_ps
+        Sinv_sample = 0.
+        
 
     # Calculate goodness of fit statistics
     chisq, ln_post = goodness_of_fit_statistics(
@@ -688,8 +752,12 @@ def gibbs_sample(
     sys_modes,
     sys_prior,
     sys_initial,
+    sky_model_initial=None,
     Niter=100,
     seed=None,
+    sample_systematics=True,
+    sample_eor_fg=True,
+    sample_signal_ps=True,
     solver_tol=1e-12,
     verbose=True,
     nproc=1,
@@ -837,10 +905,14 @@ def gibbs_sample(
                 sys_prior=sys_prior,
                 sys_modes=sys_modes,
                 sys_amps=sys_amps_current,
+                sky_model=sky_model_initial,
                 nproc=nproc,
                 iter=i,
                 map_estimate=map_estimate,
                 solver_tol=solver_tol,
+                sample_systematics=sample_systematics,
+                sample_eor_fg=sample_eor_fg,
+                sample_signal_ps=sample_signal_ps,
                 verbose=verbose
             )
 
