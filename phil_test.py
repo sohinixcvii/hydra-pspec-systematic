@@ -3,6 +3,7 @@ import numpy as np
 import pylab as plt
 import hydra_pspec as hp
 import scipy.special
+from pyuvdata import UVData
 
 np.random.seed(11)
 
@@ -67,6 +68,20 @@ plt.ylabel("Freq. channel")
 plt.show()
 """
 
+uvd = UVData()
+vis_eor_path='/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor.uvh5'
+uvd.read(vis_eor_path)
+uvd.conjugate_bls()
+uvd = hp.utils.form_pseudo_stokes_vis(uvd)
+vis_eor = uvd.get_data((0, 1, "xx"))  # shape (Ntimes, Nfreqs)
+
+
+axes=(1,)
+ds_eor_true = np.fft.ifftshift(vis_eor, axes=axes)
+ds_eor_true = np.fft.fftn(ds_eor_true, axes=axes)
+ds_eor_true = np.fft.fftshift(ds_eor_true, axes=axes)
+ps_true_old = (np.abs(ds_eor_true)**2).mean(axis=0)
+
 # Check power spectrum
 def calc_ps(s):
     # NOTE: This uses inverse FFT instead of FFT to get the right normalisation
@@ -77,14 +92,24 @@ def calc_ps(s):
     Nobs, Nfreqs = sk.shape
     return np.mean(sk * sk.conj(), axis=0).real / Nfreqs # CHECK: This takes an average
 
+ps_true_new=calc_ps(vis_eor)
+
+'''Plot the two power spectra and see how they compare'''
+# plt.subplot(121)
+plt.plot(ps_true_old.real,label='Older method',marker='.')
+plt.plot(ps_true_new.real,label='Newer method',marker='.',ls=':')
+plt.plot(203*ps_true_new.real,label='New norm*Nfreqs',ls='-.')
+plt.legend()
+plt.show()
+exit()
 # Generate EoR field from this
-sqrt_S_true = np.linalg.cholesky(S_true)
-eor_true = sqrt_S_true @ (np.random.randn(freqs.size, Ntimes) 
-                          + 1.j*np.random.randn(freqs.size, Ntimes)) / np.sqrt(2.)
-# Note factor of sqrt(2) above
+# sqrt_S_true = np.linalg.cholesky(S_true)
+# eor_true = sqrt_S_true @ (np.random.randn(freqs.size, Ntimes) 
+#                           + 1.j*np.random.randn(freqs.size, Ntimes)) / np.sqrt(2.)
+# # Note factor of sqrt(2) above
 
 # Check that generated EoR field has a similar power spectrum to the true one
-ps_check = calc_ps(eor_true.T)
+# ps_check = calc_ps(eor_true.T)
 
 """
 # Plot EoR model to check what it looks like
@@ -229,8 +254,9 @@ plt.show()
 ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
                              1e-1 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
 
-print("PS:", ps_prior.shape, ps_true.shape)
-
+print("PS shapes:", ps_prior.shape, ps_true.shape)
+print("PS max: {} PS min: {}".format(ps_true.max(),ps_true.min()))
+print("PS prior max: {} PS true min: {}".format(ps_prior.max(),ps_prior.min()))
 
 signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
         hp.pspec.gibbs_sample(
@@ -245,10 +271,8 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             map_estimate=False,
             verbose=True,
             nproc=1,
-            write_Niter=10000,
-            out_dir='./phil_test_outdir',
-            freqs=freqs,
-            lsts=np.linspace(0., 1., Ntimes),
+            write_Niter=10,
+            out_dir='./phil_test_outdir',   
             sys_modes=sys_modes,
             sys_prior=sys_prior,
             sys_initial=sys_amps_true,
