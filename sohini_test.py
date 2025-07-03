@@ -6,8 +6,8 @@ from pyuvdata import UVData
 
 np.random.seed(11)
 
-Ntimes = 203
-freqs = np.linspace(100., 120., 120) 
+Ntimes = 30 #60 #203
+freqs = np.linspace(100., 120., 40) ##120) 
 Nfgmodes = 4
 
 
@@ -32,11 +32,15 @@ ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., freqs.size)))
 S_true = hp.pspec.covariance_from_pspec(ps_true, fourier_op)
 
 uvd = UVData()
-vis_eor_path='/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor.uvh5'
+#vis_eor_path='/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor.uvh5'
+vis_eor_path = "/home/phil/hera/hydra-pspec/test_data/vis-eor.uvh5"
 uvd.read(vis_eor_path)
 uvd.conjugate_bls()
 uvd = hp.utils.form_pseudo_stokes_vis(uvd)
 eor_true = uvd.get_data((0, 1, "xx"))  # shape (Ntimes, Nfreqs)
+
+# Trim number of times
+eor_true = eor_true[:Ntimes,:freqs.size]
 
 # Check power spectrum
 def calc_ps(s):
@@ -61,7 +65,7 @@ S_sample = hp.pspec.covariance_from_pspec(ps_sample, fourier_op)
 Sinv_sample = hp.pspec.covariance_from_pspec(1. / ps_sample, fourier_op)
 
 # Generate noise
-noise_ps_val = 0.00004 # 0.0004
+noise_ps_val = 0.000004 #0.000004 # 0.0004
 noise_ps_true = noise_ps_val * np.ones(freqs.size)
 N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
 Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
@@ -70,18 +74,28 @@ n = np.sqrt(N_true) @ (np.random.randn(freqs.size, Ntimes)
 # Note factor of sqrt(2) above
 noise_ps_check = calc_ps(n.T)
 
+"""
+plt.plot(ps_true)
+plt.plot(ps_sample, 'r--')
+plt.axhline(noise_ps_val)
+plt.plot(noise_ps_check, 'k:')
+plt.show()
+exit()
+"""
+
 # Build systematics model
-nm_list = [(0,15), (0,16)]
+nm_list = [(5,5), (0,4), (4,2), (1,1)]
 lsts = np.linspace(0., 1., Ntimes)
 sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6, 
                                     times_sec=lsts * 24./(2.*np.pi) * 3600., 
                                     modes=nm_list)
-im=plt.matshow(sys_modes.T.real,aspect='auto')
-plt.colorbar(im)
-plt.title("The H operator, modes: "+str(nm_list))
-plt.show()
-sys_amps_true = np.array([4., 4.01])
-sys_prior = 4.**2. * np.eye(sys_amps_true.size)
+#im=plt.matshow(sys_modes.T.real,aspect='auto')
+#plt.colorbar(im)
+#plt.title("The H operator, modes: "+str(nm_list))
+#plt.show()
+
+sys_amps_true = np.array([4., 4.1, 5., -2.]) #np.array([4., 4.01])
+sys_prior = 4**2. * np.eye(sys_amps_true.size)
 
 gain_true = (1. + sys_modes @ sys_amps_true).reshape((freqs.size, Ntimes))
 
@@ -92,13 +106,13 @@ d = gain_true.T * (fg_true.T + eor_true) + n.T
 ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
                              1e-1 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
 
-print("PS shapes:", ps_prior.shape, ps_true.shape)
-print("PS max: {} PS min: {}".format(ps_true.max(),ps_true.min()))
-print("PS prior max: {} PS true min: {}".format(ps_prior.max(),ps_prior.min()))
+#print("PS shapes:", ps_prior.shape, ps_true.shape)
+#print("PS max: {} PS min: {}".format(ps_true.max(),ps_true.min()))
+#print("PS prior max: {} PS true min: {}".format(ps_prior.max(),ps_prior.min()))
 flags_i = np.ones((len(freqs),), dtype=int)
-print("Shape of flags array: ",flags_i.shape)
+#print("Shape of flags array: ",flags_i.shape)
 
-
+"""
 fig,ax = plt.subplots(1,3,figsize=(12,4))
 
 im=ax[0].matshow(eor_true.real,aspect='auto')
@@ -115,64 +129,127 @@ ax[2].set_title("Gain true")
 plt.colorbar(im)
 
 plt.show()
+"""
 
 signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
         hp.pspec.gibbs_sample(
-            vis = d,
-            flags = flags_i ,
-            signal_ps_initial = ps_true,
-            fg_modes = fgmodes,
-            Ninv = Ninv,
-            signal_ps_prior = ps_prior,
-            Niter=10,
+            vis=d,
+            flags=flags_i,
+            signal_ps_initial=ps_true,
+            fg_modes=fgmodes,
+            Ninv=Ninv,
+            signal_ps_prior=ps_prior,
+            Niter=1000,
             seed=10,
+            freqs=freqs,
+            lsts=np.linspace(0., 1., Ntimes),
             map_estimate=False,
             verbose=True,
             nproc=1,
-            write_Niter=10,
+            write_Niter=10000,
             out_dir='./phil_test_outdir',   
             sys_modes=sys_modes,
             sys_prior=sys_prior,
             sys_initial=sys_amps_true,
-            solver_tol=1e-12
+            solver_tol=1e-10,
+            sample_systematics=True,
+            sample_eor_fg=True,
+            sample_signal_ps=True,
+            sky_model_initial=None #(fg_true.T + eor_true)
         )
 
 
 
 # Plot data residual
-model = (signal_amps.mean(axis=0) + fg_amps.mean(axis=0) @ fgmodes.T)
+#model = (signal_amps.mean(axis=0) + fg_amps.mean(axis=0) @ fgmodes.T)
+print("FIXME: Using the stored sky model")
+model = (fg_true.T + eor_true)
 
+sys_model_true = (1. + sys_modes @ sys_amps_true).reshape((freqs.size, Ntimes))
+sys_model_sampled = (1. + sys_modes @ sys_amps.mean(axis=0)).reshape((freqs.size, Ntimes))
+
+
+plt.subplot(121)
+colours = ['r', 'g', 'b', 'y', 'c', 'm']
+for i in range(sys_amps_true.size):
+    #plt.axhline(sys_amps_true[i], color=colours[i], ls='dashed')
+    plt.plot((sys_amps[:,i] - sys_amps_true[i]).imag, label="Sys mode: %s" % str(nm_list[i])) #, color=colours[i], alpha=0.5)
+plt.axhline(0., ls='dashed', color='k')
+plt.legend(loc='upper right')
+plt.xlabel("Iteration", fontsize=15)
+plt.ylabel("amp - amp_true", fontsize=15)
+
+
+plt.subplot(122)
+plt.plot(fg_amps[:,:,0] - fg_amps_true[0], color='r', alpha=0.3)
+plt.plot(fg_amps[:,:,1] - fg_amps_true[1], color='g', alpha=0.3)
+plt.plot(fg_amps[:,:,2] - fg_amps_true[2], color='b', alpha=0.3)
+plt.plot(fg_amps[:,:,3] - fg_amps_true[3], color='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+#exit()
+
+
+print("sys_amps true:", sys_amps_true)
+print("sys_amps samp:", sys_amps.mean(axis=0))
 
 # Show model and residual
-plt.subplot(141)
+plt.subplot(241)
 plt.matshow(model.real, aspect='auto', fignum=False)
 plt.title("Sampled model")
 plt.colorbar()
 
-plt.subplot(142)
+plt.subplot(242)
 plt.matshow(d.real, aspect='auto', fignum=False)
 plt.title("Data")
 plt.colorbar()
 
-plt.subplot(143)
-plt.matshow(d.real - model.real, aspect='auto', fignum=False)
+plt.subplot(243)
+plt.matshow(d.real - (sys_model_sampled.T * model).real, aspect='auto', fignum=False)
 plt.title("Residual")
 plt.colorbar()
 
-plt.subplot(144)
-plt.matshow(eor_true.real, aspect='auto', fignum=False)
-plt.title("EoR data")
+plt.subplot(244)
+plt.matshow(n.real.T, aspect='auto', fignum=False)
+plt.title("Noise")
 plt.colorbar()
 
-plt.gcf().set_size_inches((16., 4.))
+plt.subplot(245)
+plt.matshow(eor_true.real, aspect='auto', fignum=False)
+plt.title("EoR true")
+plt.colorbar()
+
+plt.subplot(246)
+plt.matshow(signal_amps.mean(axis=0).real, aspect='auto', fignum=False)
+plt.title("EoR sampled")
+plt.colorbar()
+
+plt.subplot(247)
+plt.matshow(sys_model_true.real, aspect='auto', fignum=False)
+plt.title("Systematics true")
+plt.colorbar()
+
+plt.subplot(248)
+plt.matshow(sys_model_sampled.real, aspect='auto', fignum=False)
+plt.title("Systematics sampled")
+plt.colorbar()
+
+plt.gcf().set_size_inches((20., 6.))
+plt.tight_layout()
 plt.show()
 
+
 plt.subplot(111)
+plt.plot(signal_ps.T, 'r-', alpha=0.15)
 plt.plot(ps_true, 'k-',label='True PS')
-plt.plot(signal_ps.mean(axis=0), 'r--',label='Sampled ps')
+plt.plot(ps_true[::-1], 'k--',label='True PS reversed')
+plt.plot(np.fft.fftshift(ps_true), 'k--',label='True PS fftshift')
 plt.legend()
 plt.show()
 
+
+"""
 
 fig,ax = plt.subplots(3,3,figsize=(12,16))
 
@@ -212,3 +289,4 @@ im=ax[2,2].matshow((gain_true-(1. + sys_modes @ sys_amps_true).reshape((freqs.si
 plt.colorbar(im)
 
 plt.show()
+"""
