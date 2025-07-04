@@ -27,9 +27,9 @@ print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(
 
 
 # Build systematics model
-# nm_list = [(0,3),(0,4),(0,5),(0,6)] #low dl fr 0
+nm_list = [(0,3),(0,4),(0,5),(0,6)] #low dl fr 0
 # nm_list = [(0,20), (0,21), (0,22), (0,23)] #high dl fr 0
-nm_list = [(3,3),(3,4),(3,5),(3,6)] #low dl low fr
+# nm_list = [(3,3),(3,4),(3,5),(3,6)] #low dl low fr
 
 ''' Loading and making the data '''
 # Generate FG mode matrix
@@ -147,32 +147,32 @@ plt.show()
 """
 
 
-# signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
-#         hp.pspec.gibbs_sample(
-#             vis=d,
-#             flags=flags_i,
-#             signal_ps_initial=ps_true,
-#             fg_modes=fgmodes,
-#             Ninv=Ninv,
-#             signal_ps_prior=ps_prior,
-#             Niter=10000,
-#             seed=10,
-#             freqs=freqs,
-#             lsts=np.linspace(0., 1., Ntimes),
-#             map_estimate=False,
-#             verbose=True,
-#             nproc=1,
-#             write_Niter=10000,
-#             out_dir=op_dir,
-#             sys_modes=sys_modes,
-#             sys_prior=sys_prior,
-#             sys_initial=sys_amps_true,
-#             solver_tol=1e-12,
-#             sample_systematics=True,
-#             sample_eor_fg=True,
-#             sample_signal_ps=True,
-#             sky_model_initial=None #(fg_true.T + eor_true)
-#         )
+signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
+        hp.pspec.gibbs_sample(
+            vis=d,
+            flags=flags_i,
+            signal_ps_initial=ps_true,
+            fg_modes=fgmodes,
+            Ninv=Ninv,
+            signal_ps_prior=ps_prior,
+            Niter=10000,
+            seed=10,
+            freqs=freqs,
+            lsts=np.linspace(0., 1., Ntimes),
+            map_estimate=False,
+            verbose=True,
+            nproc=1,
+            write_Niter=10000,
+            out_dir=op_dir,
+            sys_modes=sys_modes,
+            sys_prior=sys_prior,
+            sys_initial=sys_amps_true,
+            solver_tol=1e-12,
+            sample_systematics=True,
+            sample_eor_fg=True,
+            sample_signal_ps=True,
+            sky_model_initial=None #(fg_true.T + eor_true)
+        )
 
 
 end_t = time.time()
