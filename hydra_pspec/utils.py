@@ -79,6 +79,15 @@ def naive_pspec(data, subtract_mean=True, taper=True):
         
     return np.fft.fftshift(abs(np.fft.fft(d))**2)
 
+# Make a  power spectrum
+def calc_ps(s):
+    # NOTE: This uses inverse FFT instead of FFT to get the right normalisation
+    axes = (1,)
+    sk = np.fft.ifftshift(s, axes=axes)
+    sk = np.fft.fftn(sk, axes=axes)
+    sk = np.fft.fftshift(sk, axes=axes)
+    Nobs, Nfreqs = sk.shape
+    return np.mean(sk * sk.conj(), axis=0).real / Nfreqs # CHECK: This takes an average
 
 def trim_flagged_channels(w, x):
     """
@@ -277,11 +286,10 @@ def add_mtime_to_filepath(fp, join_char="-"):
 
 def write_numpy_files(
     fp,
-    signal_cr,
-    signal_S,
+    signal_amps,
     signal_ps,
     fg_amps,
-    b_sys,
+    sys_amps,
     chisq,
     ln_post
 ):
@@ -313,10 +321,9 @@ def write_numpy_files(
     """
     if not isinstance(fp, Path):
         fp = Path(fp)
-    np.save(fp / f"gcr-eor.npy", signal_cr)
-    np.save(fp / f"cov-eor.npy", signal_S)
+    np.save(fp / f"gcr-eor.npy", signal_amps)
     np.save(fp / f"dps-eor.npy", signal_ps)
     np.save(fp / f"fg-amps.npy", fg_amps)
-    np.save(fp / f"b-sys.npy", b_sys)    
+    np.save(fp / f"b-sys.npy", sys_amps)    
     np.save(fp / f"chisq.npy", chisq)
     np.save(fp / f"ln-post.npy", ln_post)

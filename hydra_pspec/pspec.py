@@ -8,7 +8,6 @@ from . import sys_solver as sys_sol
 from multiprocess import Pool, current_process
 from . import utils
 import os, time
-import warnings
 import cProfile
 import pstats
 import sys
@@ -20,15 +19,7 @@ from tqdm import tqdm  #For progress bars
 from .plotting_functions import master_plotter #For plotting iterations
 #uvd=UVData() #Loading uvh5 files
 #pr=cProfile.Profile() #For profiling
-np.seterr(all='raise')  #Raises all detailed errors for numpy issues
-# warnings.simplefilter('always')
 
-def warn_with_traceback(message, category, filename, lineno, file=None, line=None):
-    import traceback
-    log = file if hasattr(file, 'write') else sys.stderr
-    traceback.print_stack(file=log)
-    print(f'{filename}:{lineno}: {category.__name__}: {message}', file=log)
-    
 def data_dly_fr(data, freqs, times, windows=None,
                     freq_window_kwargs=None, time_window_kwargs=None):
     """
@@ -93,6 +84,8 @@ def data_dly_fr(data, freqs, times, windows=None,
     
 
     return data_fr_dly
+
+'''ICDF sampler'''
 def draw_icdf_samples(alpha, beta, x):
     
     """
@@ -124,18 +117,11 @@ def draw_icdf_samples(alpha, beta, x):
     
     cdf = invgamma.cdf(x, a=alpha+1, loc=0, scale=beta)
     cdf -= cdf.min() # shift minimum down to zero
-    # print("CDF max is: ",cdf.max())
-    try:
-        if cdf.max()==0.0:
-            cdf /= (cdf.max()+1e-5) # rescale maximum to 1
-        else:
-            cdf /= cdf.max() # rescale maximum to 1
-    except:
-        cdf = np.array([round(c,16) for c in cdf])
-        if cdf.max()==0.0:
-            cdf /= (cdf.max()+1e-5) # rescale maximum to 1
-        else:
-            cdf /= cdf.max() # rescale maximum to 1
+    if cdf.max()==0.0:
+        cdf /= (cdf.max()+1e-5) # rescale maximum to 1
+    else:
+        cdf /= cdf.max() # rescale maximum to 1
+
     # Remove duplicate entries in cdf so interpolator can work properly; 
     # tends to result in sample points near the extrema of the prior bounds anyway
     cdf_unique, idxs_unique = np.unique(cdf, return_index=True)
@@ -143,7 +129,6 @@ def draw_icdf_samples(alpha, beta, x):
     # Draw sample using inversion sampling method
     # Note: Must use linear interpolation to avoid very bad interpolation results
     return interp1d(cdf_unique, x[idxs_unique], kind='linear')(u)
-# '''ICDF sampler'''
 
 def sample_pspec(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
     """
@@ -182,14 +167,10 @@ def sample_pspec(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
     beta = np.sum(sk * sk.conj(), axis=0).real # normalisation
 
     # Sample cdf logarithmically between provided prior bounds
-    xgrid = np.logspace(np.log10(prior.min() + 0.00001), np.log10(prior.max()), ngrid) #FIXME: the prior min is 0, can't have that. 
-    if xgrid[0] >= xgrid[-1]:
-        raise ValueError("Invalid xgrid: must be increasing")
-
+    xgrid = np.logspace(np.log10(prior.min()), np.log10(prior.max()), ngrid) #FIXME: the prior min is 0, can't have that. 
+    
     samples = np.zeros(Nfreqs)
     for i in range(Nfreqs):
-        if np.isnan(beta[i]) or np.isinf(beta[i]) or beta[i] < 1e-300:
-            raise ValueError(f"Invalid or unstable beta[{i}] = {beta[i]}")
         samples[i] = draw_icdf_samples(alpha, beta[i], xgrid)
     return samples
 
@@ -353,11 +334,9 @@ def gcr_fg_and_signal_per_time(idx,
                    + (sys_model.conj()[:,np.newaxis] * sqrtNinv[:,np.newaxis] * omb) )
     
     # Run CG solver, preconditioned by M ~ A^-1
-
     x0 = None
     xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol)
     
->>>>>>> e13f75ddb624a4756deac2aadaa971ffdd58340c
     # Check solution
     if info > 0:
         # Try again with different solver
@@ -611,11 +590,8 @@ def gibbs_step(
     sys_modes,
     sys_amps,
     sys_prior,
-<<<<<<< HEAD
-=======
     iter,
     sky_model=None,
->>>>>>> e13f75ddb624a4756deac2aadaa971ffdd58340c
     nproc=1,
     sample_systematics=True,
     sample_eor_fg=True,
@@ -654,14 +630,11 @@ def gibbs_step(
         sys_prior (array_like):
             Systematic coefficient prior covariance matrix, of shape 
             `(Nsys_modes, Nsys_modes)`.
-<<<<<<< HEAD
-=======
         iter (int):
             Nth Gibbs sampler iteration (for plotting)
         sky_model (array_like):
             Sky model to use if the signal + FG GCR sampling step is switched off. 
             Otherwise, it will be overwritten in the first conditional sampling step.
->>>>>>> e13f75ddb624a4756deac2aadaa971ffdd58340c
         nproc (int):
             Number of processes to use for parallelised functions.
         sample_systematics (bool):
@@ -697,52 +670,8 @@ def gibbs_step(
 
     # Precompute current systematics model
     # Note: Be very careful which order this is reshaped!
-    # The code snippet is creating a NumPy array `sys_model` with the same shape as the array `vis`,
-    # filled with complex numbers of value 1. The comment `#FIXME: test code, running with systematics
-    # set to 1s` suggests that this code is for testing purposes and the systematics are set to 1s.
-    sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes),order='F').T #Hardcoding ordering of reshape accross the code for consistency
+    sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes)).T
 
-<<<<<<< HEAD
-    # sys_model = np.ones_like(vis,dtype='complex') #FIXME: test code, running with systematics set to 1s
-    # (1) Sample signal and foreground amplitudes using GCR
-    cr = gcr_fg_and_signal(
-                    vis=vis, 
-                    fg_modes=fg_modes, 
-                    Nparams=Nparams, 
-                    sys_model=sys_model,    #Past systematics model
-                    flags=flags, 
-                    signal_ps=signal_ps, 
-                    Ninv=Ninv,
-                    fourier_op=fourier_op, 
-                    nproc=nproc, 
-                    map_estimate=map_estimate,
-                    solver_tol=solver_tol,
-                    verbose=verbose)   #Running test on the d=(1+delta g)s+n form of the equations 
-    
-    # Extract separate signal and FG parts from the solution
-    signal_amps = cr[:, :-Nfg_modes]
-    fg_amps = cr[:, -Nfg_modes:]
-    
-    # Update sky model (without multiplicative systematics); sum of EoR + FG model
-    sky_model = (signal_amps + fg_amps @ fg_modes.T)
-
-
-    # (2) Sample multiplicative systematics parameters
-    sys_amps = sys_sol.gcr_systematics(
-                                data=vis,
-                                Ninv=Ninv,
-                                sky_model=sky_model,   #The existing sky model
-                                sys_modes=sys_modes,   #Fourier operator
-                                sys_prior=sys_prior, 
-                                verbose=verbose
-                                )
-
-    # (3) Sample EoR signal power spectrum (and also convert to signal covariance matrix)
-    signal_ps_sample = sample_pspec(s=signal_amps, prior=signal_ps_prior)
-    # signal_ps_sample = np.load('/Users/user/Documents/Codes/hydra_sys_project1/multi_phil/hydra-pspec-systematic/ps_true.npy',allow_pickle=False)
-    # No need for factor of 1/Nfreqs**2 here as sample_pspec() changed to iFFT normalization
-    Sinv_sample = covariance_from_pspec(1. / signal_ps_sample, fourier_op) #/ Nfreqs**2. # note FFT norm
-=======
     if sample_eor_fg:
         # (1) Sample signal and foreground amplitudes using GCR
         cr = gcr_fg_and_signal(
@@ -796,7 +725,6 @@ def gibbs_step(
         signal_ps_sample = signal_ps
         Sinv_sample = 0.
         
->>>>>>> e13f75ddb624a4756deac2aadaa971ffdd58340c
 
     # Calculate goodness of fit statistics
     chisq, ln_post = goodness_of_fit_statistics(
@@ -816,6 +744,8 @@ def gibbs_sample(
     vis,
     flags,
     Ninv,
+    freqs,
+    lsts,
     signal_ps_initial,
     signal_ps_prior,
     fg_modes,
@@ -854,6 +784,10 @@ def gibbs_sample(
             Inverse noise variance matrix. This can either have shape
             `(Ntimes, Nfreqs, Nfreqs)`, one for each time, or can be a common
             one for all times with shape `(Nfreqs, Nfreqs)`.
+        freqs:
+            Frequency array (Nfreqs,)
+        lsts:
+            Time array in LSTS (Ntimes,)
         signal_ps_initial (array_like):
             Initial guess for the EoR signal power spectrum. A better guess 
             should result in faster convergence.
@@ -918,35 +852,23 @@ def gibbs_sample(
     Ntimes, Nfreqs = vis.shape
     Nmodes = fg_modes.shape[1]
     Nsys_modes = sys_modes.shape[-1]
-    # FIXME: commenting out the assertion lines because they are throwing errors
-    # assert (
-    #         sys_prior.shape[0] == sys_prior.shape[1]
-    #         and sys_prior.shape[0] == sys_initial.shape[0]
-    #         and sys_prior.shape[0] == sys_modes.shape[-1]
-    #     ), "sys_modes, sys_prior, and sys_initial must have the same number of modes"
-
-    # assert sys_modes.shape[0] == Ntimes * Nfreqs, \
-    #     "sys_modes must have shape (Ntimes * Nfreqs, Nsysmodes)"
-
-    # assert len(flags) == Nfreqs, "`flags` array must have shape (Nfreqs,), it has shape {}".format(flags.shape)
-
-    # assert fg_modes.shape[0] == Nfreqs, "fgmodes must have shape (Nfreqs, Nmodes)"
-
-    # assert signal_ps_prior.shape == (2, Nfreqs), "ps_prior must have shape (2, Nfreqs)"
-
-    # if len(Ninv.shape) == 3:
-    #     assert Ninv.shape[0] == Ntimes, \
-    #         "Ninv shape must be (Ntimes, Nfreqs, Nfreqs) or (Nfreqs, Nfreqs)"
-
+    assert sys_prior.shape[0] == sys_prior.shape[1] \
+        == sys_initial.shape[0] == sys_modes.shape[-1], \
+        "sys_modes, sys_prior, and sys_initial must have the same number of modes"
+    assert sys_modes.shape[0] == Ntimes * Nfreqs, \
+        "sys_modes must have shape (Ntimes * Nfreqs, Nsysmodes)"
+    assert flags.shape == (Nfreqs,), "`flags` array must have shape (Nfreqs,)"
+    assert fg_modes.shape[0] == Nfreqs, "fgmodes must have shape (Nfreqs, Nmodes)"
+    assert signal_ps_prior.shape == (2, Nfreqs), "ps_prior must have shape (2, Nfreqs)"
+    if len(Ninv.shape) == 3:
+        assert (
+            Ninv.shape[0] == Ntimes
+        ), "Ninv shape must be (Ntimes, Nfreqs, Nfreqs) or (Nfreqs, Nfreqs)"
     
-    # Check for sensible initial power spectrum, 0th row is upper limit, 1st row is lower limit
-    #Changed this to min() and max() to check if the min and max of starting power spectrum is in range; 
-    # np.all causing issues because prior bounds (0,0) exist for unbound priors.
-    # ps_prior[0,:] is upper bound and ps_prior[1,:] is lower bound
-    
-    # assert np.all(np.logical_and(signal_ps_initial.max() <= signal_ps_prior[0,:].max(),
-    #                               signal_ps_initial.min() >= signal_ps_prior[1,:].min())), \
-    #        "Initial power spectrum ps_initial is not within ps_prior range."
+    # Check for sensible initial power spectrum
+    assert np.all( np.logical_and(signal_ps_initial >= signal_ps_prior[0,:],
+                                  signal_ps_initial <= signal_ps_prior[1,:]) ), \
+           "Initial power spectrum ps_initial is not within ps_prior range."
 
     # Set up arrays for sampling
     signal_amps = np.zeros((Niter, Ntimes, Nfreqs), dtype=complex)
@@ -985,6 +907,7 @@ def gibbs_sample(
                 sys_amps=sys_amps_current,
                 sky_model=sky_model_initial,
                 nproc=nproc,
+                iter=i,
                 map_estimate=map_estimate,
                 solver_tol=solver_tol,
                 sample_systematics=sample_systematics,
@@ -1020,10 +943,7 @@ def gibbs_sample(
             ln_post
         )
 
-
     if verbose:
         print()
 
     return signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post
-
-# warnings.showwarning = warn_with_traceback
