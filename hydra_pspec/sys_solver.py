@@ -81,11 +81,12 @@ def fourier_mode_2d(freqs_Hz, times_sec, modes, box=None):
 def sys_modes(freqs_Hz, times_sec, modes):
     """
     Construct systematic mode operator, which is a 2D Fourier basis.
+    note: mode 0 is DL, mode 1 is FR
     """
     u, kfreq, ktime = fourier_mode_2d(freqs_Hz=freqs_Hz, 
                                       times_sec=times_sec, 
                                       modes=modes)
-    return u.reshape((u.shape[0], -1)).T
+    return u.reshape((u.shape[0], -1),order='F').T
 
 
 def sq_mat_tr(A,flag='r'):
@@ -101,9 +102,9 @@ def sq_mat_tr(A,flag='r'):
     '''
     sh=np.shape(A)
     if flag=='c':
-        reshaped_A = np.array(A).transpose(0, 3, 1, 2).reshape(sh[0] * sh[2], sh[1] * sh[3])
+        reshaped_A = np.array(A).transpose(0, 3, 1, 2).reshape(sh[0] * sh[2], sh[1] * sh[3],order='F')
     elif flag=='r':
-        reshaped_A = np.array(A).transpose(0, 2, 1, 3).reshape(sh[0] * sh[2], sh[1] * sh[3])
+        reshaped_A = np.array(A).transpose(0, 2, 1, 3).reshape(sh[0] * sh[2], sh[1] * sh[3],order='F')
     return reshaped_A
 
 def sq_mat_tr2(your_mat):

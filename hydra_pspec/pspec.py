@@ -238,6 +238,7 @@ def gcr_fg_and_signal_per_time(idx,
                                map_estimate=False, 
                                verbose=False,
                                multiprocess_seed=None,
+                               solver='lgmres',
                                solver_tol=1e-12):
     """
     Solves the GCR equation for the joint foreground + signal model 
@@ -289,7 +290,7 @@ def gcr_fg_and_signal_per_time(idx,
     np.random.seed(seed)
 
     Nfreqs, Nmodes = fg_modes.shape
-    d = vis.reshape((1, max(Nfreqs, len(vis.T))))
+    d = vis.reshape((1, max(Nfreqs, len(vis.T))),order='F')
 
     # Construct necessary operators for GCR
     Ninv_sys = (sys_model.conj().T * Ninv.diagonal() *  sys_model)
@@ -335,7 +336,8 @@ def gcr_fg_and_signal_per_time(idx,
     
     # Run CG solver, preconditioned by M ~ A^-1
     x0 = None
-    xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol)
+    # xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol, maxiter=8000)
+    xsoln, info = sp.sparse.linalg.gmres(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol, maxiter=8000)
     
     # Check solution
     if info > 0:
@@ -374,6 +376,7 @@ def gcr_fg_and_signal(
     fourier_op,
     nproc=1, 
     map_estimate=False,
+    solver='lgmres',
     solver_tol=1e-12,
     verbose=False,
 ):
@@ -450,6 +453,7 @@ def gcr_fg_and_signal(
                 Ninv=Ninv,
                 sqrtNinv=sqrtNinv, 
                 map_estimate=map_estimate,
+                solver=solver,
                 solver_tol=solver_tol,
                 verbose=verbose,
                 multiprocess_seed=100000
@@ -481,7 +485,7 @@ def gcr_fg_and_signal(
         )
         )
     """
-    samples = np.array(samples).reshape((vis.shape[0], -1))
+    samples = np.array(samples).reshape((vis.shape[0], -1),order='F')
     residuals = np.array(residuals)
     info = np.array(info)
 
@@ -597,6 +601,7 @@ def gibbs_step(
     sample_eor_fg=True,
     sample_signal_ps=True,
     map_estimate=False,
+    solver='lgmres',
     solver_tol=1e-12,
     verbose=True
 ):
@@ -670,7 +675,7 @@ def gibbs_step(
 
     # Precompute current systematics model
     # Note: Be very careful which order this is reshaped!
-    sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes)).T
+    sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes),order='F').T
 
     if sample_eor_fg:
         # (1) Sample signal and foreground amplitudes using GCR
@@ -685,6 +690,7 @@ def gibbs_step(
                         fourier_op=fourier_op, 
                         nproc=nproc, 
                         map_estimate=map_estimate,
+                        solver=solver,
                         solver_tol=solver_tol,
                         verbose=verbose)   #Running test on the d=(1+delta g)s+n form of the equations 
         
@@ -758,6 +764,7 @@ def gibbs_sample(
     sample_systematics=True,
     sample_eor_fg=True,
     sample_signal_ps=True,
+    solver='lgmres',
     solver_tol=1e-12,
     verbose=True,
     nproc=1,
@@ -909,6 +916,7 @@ def gibbs_sample(
                 nproc=nproc,
                 iter=i,
                 map_estimate=map_estimate,
+                solver=solver,
                 solver_tol=solver_tol,
                 sample_systematics=sample_systematics,
                 sample_eor_fg=sample_eor_fg,
