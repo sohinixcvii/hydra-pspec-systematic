@@ -20,8 +20,7 @@ from uvtools.utils import FFT, fourier_freqs
 
 from astropy import units as u
 mpl.rcParams['font.size']=20
-from plotting_functions import master_plotter,plot_waterfalls,plot_waterfalls_from_dlfr
-from functions import covariance_from_pspec,sys_modes,fourier_operator,data_fr_dly_to_t_f
+from functions import covariance_from_pspec,sys_modes,fourier_operator
 
 # Check power spectrum
 def calc_ps(s):
