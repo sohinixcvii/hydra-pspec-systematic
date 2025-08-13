@@ -1,13 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import numpy as np
 import os
 import sys
 from pyuvdata import UVData
 from uvtools.plot import waterfall
 from uvtools.dspec import gen_window
 from uvtools.utils import FFT, fourier_freqs
-from config import *
 from astropy import units
 from astropy.units import Quantity
 import pyuvdata.utils as uvutils

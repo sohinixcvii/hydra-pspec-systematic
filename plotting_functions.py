@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from config import *
+# from config import *
 import os
 import scipy.stats as sci_st
 from pyuvdata import UVData
