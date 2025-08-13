@@ -86,7 +86,7 @@ def sys_modes(freqs_Hz, times_sec, modes):
     u, kfreq, ktime = fourier_mode_2d(freqs_Hz=freqs_Hz, 
                                       times_sec=times_sec, 
                                       modes=modes)
-    return u.reshape((u.shape[0], -1),order='F').T
+    return u.reshape((-1,u.shape[0]))  # Hardcoding to order F, DO NOT CHANGE
 
 
 def sq_mat_tr(A,flag='r'):
@@ -102,9 +102,9 @@ def sq_mat_tr(A,flag='r'):
     '''
     sh=np.shape(A)
     if flag=='c':
-        reshaped_A = np.array(A).transpose(0, 3, 1, 2).reshape(sh[0] * sh[2], sh[1] * sh[3],order='F')
+        reshaped_A = np.array(A).transpose(0, 3, 1, 2).reshape(sh[0] * sh[2], sh[1] * sh[3]) # Hardcoding to order F, DO NOT CHANGE
     elif flag=='r':
-        reshaped_A = np.array(A).transpose(0, 2, 1, 3).reshape(sh[0] * sh[2], sh[1] * sh[3],order='F')
+        reshaped_A = np.array(A).transpose(0, 2, 1, 3).reshape(sh[0] * sh[2], sh[1] * sh[3]) # Hardcoding to order F, DO NOT CHANGE
     return reshaped_A
 
 def sq_mat_tr2(your_mat):

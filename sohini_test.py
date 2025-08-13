@@ -9,15 +9,8 @@ import matplotlib.ticker as ticker
 import cmcrameri.cm as cmc
 import sys 
 import time 
-# import subprocess
 
-# proc=subprocess.Popen(['caffeinate'])
-
-
-# try:
 start_t= time.time()
-# sys.path.append('/Users/user/Documents/Codes/hydra_sys_project1/GCR_test_scripts/')
-# from functions import *
 
 np.random.seed(11)
 
@@ -31,11 +24,22 @@ def calc_ps(s):
     Nobs, Nfreqs = sk.shape
     return np.mean(sk * sk.conj(), axis=0).real / Nfreqs # CHECK: This takes an average
 
-Ntimes = 60 #60 #203
-Nfreqs = 40
+Ntimes = 80 #60 #203
+Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 Nfgmodes = 12
-op_dir = './paper_plots/high_dl_fr_0' # Path to results 
+Niter=100
+
+# op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
+op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
+# op_dir = './paper_plots/low_dl_low_fr' # low_dl_low_fr
+# op_dir = './paper_plots/fixed_sky'
+
+# Build systematics model
+# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
+nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
+# nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
+
 freqs=freqs[:Nfreqs]
 
 print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
@@ -44,10 +48,7 @@ ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., Nfreqs)))
 S_true = hp.pspec.covariance_from_pspec(ps_true, fourier_op)
 
 print("Shape of ps_true: {}, shape of S_true: {}".format(ps_true.shape,S_true.shape))
-# Build systematics model
-# nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
-nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
-# nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
+
 
 ''' Loading and making the data '''
 # Generate FG mode matrix
@@ -99,14 +100,14 @@ fg_true=fg_true[:Ntimes,:Nfreqs]
 ps_true_vis=calc_ps(eor_true)
 
 
-plt.plot(ps_true, 'k-',label='True ps')
-plt.plot(ps_check, 'r--',label='Checking ps')
-plt.plot(ps_true_vis, 'b',label='PS from vis')
-plt.xlabel("Fourier mode idx")
-plt.ylabel("PS")
-plt.legend()
-plt.gcf().set_size_inches((10., 8.))
-plt.show()
+# plt.plot(ps_true, 'k-',label='True ps')
+# plt.plot(ps_check, 'r--',label='Checking ps')
+# plt.plot(ps_true_vis, 'b',label='PS from vis')
+# plt.xlabel("Fourier mode idx")
+# plt.ylabel("PS")
+# plt.legend()
+# plt.gcf().set_size_inches((10., 8.))
+# plt.show()
 
 # Define power spectrum prior range and draw sample of PS from EoR field
 ps_prior = np.column_stack( (1e-7 * np.ones(Nfreqs),
@@ -119,7 +120,7 @@ S_sample = hp.pspec.covariance_from_pspec(ps_sample, fourier_op)
 Sinv_sample = hp.pspec.covariance_from_pspec(1. / ps_sample, fourier_op)
 
 # Generate noise
-noise_ps_val = 0.000004 #0.000004 # 0.0004
+noise_ps_val = 0.0004 #0.000004 #0.000004 # 0.0004
 noise_ps_true = noise_ps_val * np.ones(Nfreqs)
 N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
 Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
@@ -151,25 +152,6 @@ ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
 flags_i = np.ones((len(freqs),), dtype=int)
 
 """ Running the sampler """
-"""
-fig,ax = plt.subplots(1,3,figsize=(12,4))
-
-im=ax[0].matshow(eor_true.real,aspect='auto')
-ax[0].set_title("EoR true")
-plt.colorbar(im)
-
-
-im=ax[1].matshow(fg_true.T.real,aspect='auto')
-ax[1].set_title("FG true")
-plt.colorbar(im)
-
-im=ax[2].matshow(gain_true.T.real,aspect='auto')
-ax[2].set_title("Gain true")
-plt.colorbar(im)
-
-plt.show()
-"""
-
 
 signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
         hp.pspec.gibbs_sample(
@@ -179,145 +161,26 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             fg_modes=fgmodes,
             Ninv=Ninv,
             signal_ps_prior=ps_prior,
-            Niter=10000,
+            Niter=Niter,
             seed=10,
             freqs=freqs,
             lsts=np.linspace(0., 1., Ntimes),
             map_estimate=False,
             verbose=True,
             nproc=1,
-            write_Niter=10000,
+            write_Niter=Niter,
             out_dir=op_dir,
             sys_modes=sys_modes,
             sys_prior=sys_prior,
             sys_initial=sys_amps_true,
-            solver_tol=1e-12,
+            solver_tol=1e-13,
             sample_systematics=True,
             sample_eor_fg=True,
             sample_signal_ps=True,
-            sky_model_initial=None #(fg_true.T + eor_true)
+            sky_model_initial=(fg_true+eor_true) #(fg_true.T + eor_true)
         )
 
 
 end_t = time.time()
 
 print("Total time taken: {}".format(end_t-start_t))
-'''Plot results'''
-# model = (signal_amps.mean(axis=0) + fg_amps.mean(axis=0) @ fgmodes.T)
-# print("Low DL FR 0 case")
-# data_true = fg_true + eor_true
-
-# model_dlfr= data_dly_fr(model, freqs, lsts, windows='blackman-harris')
-# data_true_dlfr= data_dly_fr(data_true, freqs, lsts, windows='blackman-harris')
-# # model = (fg_true + eor_true)
-
-# sys_model_true = (1. + sys_modes @ sys_amps_true).reshape((freqs.size, Ntimes))
-# sys_model_sampled = (1. + sys_modes @ sys_amps.mean(axis=0)).reshape((freqs.size, Ntimes))
-
-
-# plt.subplot(111)
-# colours = ['r', 'g', 'b', 'y', 'c', 'm']
-# for i in range(sys_amps_true.size):
-#     #plt.axhline(sys_amps_true[i], color=colours[i], ls='dashed')
-#     plt.plot((sys_amps[:,i] - sys_amps_true[i]).imag, label="Sys mode: %s" % str(nm_list[i])) #, color=colours[i], alpha=0.5)
-# plt.axhline(0., ls='dashed', color='k')
-# plt.legend(loc='upper right')
-# plt.xlabel("Iteration", fontsize=15)
-# plt.ylabel("amp - amp_true", fontsize=15)
-
-
-# plt.tight_layout()
-# plt.show()
-# #exit()
-
-
-# print("sys_amps true:", sys_amps_true)
-# print("sys_amps samp:", sys_amps.mean(axis=0))
-
-# # Show model and residual
-# plt.subplot(241)
-# plt.matshow(model.real, aspect='auto', fignum=False)
-# plt.title("Sampled model")
-# plt.colorbar()
-
-# plt.subplot(242)
-# plt.matshow(d.real, aspect='auto', fignum=False)
-# plt.title("Data")
-# plt.colorbar()
-
-# plt.subplot(243)
-# plt.matshow(d.real - (sys_model_sampled.T * model).real, aspect='auto', fignum=False)
-# plt.title("Residual")
-# plt.colorbar()
-
-# plt.subplot(244)
-# plt.matshow(n.real.T, aspect='auto', fignum=False)
-# plt.title("Noise")
-# plt.colorbar()
-
-# plt.subplot(245)
-# plt.matshow(eor_true.real, aspect='auto', fignum=False)
-# plt.title("EoR true")
-# plt.colorbar()
-
-# plt.subplot(246)
-# plt.matshow(signal_amps.mean(axis=0).real, aspect='auto', fignum=False)
-# plt.title("EoR sampled")
-# plt.colorbar()
-
-# plt.subplot(247)
-# plt.matshow(sys_model_true.real, aspect='auto', fignum=False)
-# plt.title("Systematics true")
-# plt.colorbar()
-
-# plt.subplot(248)
-# plt.matshow(sys_model_sampled.real, aspect='auto', fignum=False)
-# plt.title("Systematics sampled")
-# plt.colorbar()
-
-# plt.gcf().set_size_inches((20., 6.))
-# plt.tight_layout()
-# plt.show()
-
-
-# plt.subplot(111)
-# plt.plot(signal_ps.T, 'r-', alpha=0.15)
-# plt.plot(ps_true, 'k-',label='True PS')
-# plt.plot(ps_true[::-1], 'k--',label='True PS reversed')
-# plt.plot(np.fft.fftshift(ps_true), 'k--',label='True PS fftshift')
-# plt.legend()
-# plt.show()
-
-# times = Quantity(np.unique(lsts * 12 / np.pi), unit='h')
-# freqs_mhz = Quantity(freqs/1e6, unit='Hz')
-# xticklocs=[0,20,40,60,80,100,119]
-# yticklocs=[0,25,50,75,100,125,150,175,200]
-# xstep = (freqs[-1]-freqs[0])/freqs.size
-# ystep = (lsts[-1]-lsts[0])/Ntimes
-
-# xticks= freqs_mhz[xticklocs]
-# yticks=times[yticklocs]
-
-# fig, ax = plt.subplots(2,3,figsize=(21,42))
-# formatter = ticker.ScalarFormatter(useMathText=True)
-# formatter.set_powerlimits((6, 6))  # Force sci notation for values >= 1e6
-
-# im=ax[0,0].matshow(data_true.real,aspect='auto',origin='lower',cmap=cmc.acton)
-# plt.colorbar(im)
-
-# im=ax[0,1].matshow(model.real,aspect='auto',origin='lower',cmap=cmc.acton)
-# plt.colorbar(im)
-
-# im=ax[0,2].matshow(data_true.real-model.real,aspect='auto',origin='lower',cmap=cmc.acton)
-# plt.colorbar(im)
-
-# im=ax[1,0].matshow(data_true_dlfr.real,aspect='auto',origin='lower',cmap=cmc.acton)
-# plt.colorbar(im)
-
-# im=ax[1,1].matshow(model_dlfr.real,aspect='auto',origin='lower',cmap=cmc.acton)
-# plt.colorbar(im)
-
-# im=ax[1,2].matshow(data_true_dlfr.real-model_dlfr.real,aspect='auto',origin='lower',cmap=cmc.acton)
-# plt.colorbar(im)
-
-# plt.show()

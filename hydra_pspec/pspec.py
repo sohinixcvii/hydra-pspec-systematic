@@ -290,7 +290,7 @@ def gcr_fg_and_signal_per_time(idx,
     np.random.seed(seed)
 
     Nfreqs, Nmodes = fg_modes.shape
-    d = vis.reshape((1, max(Nfreqs, len(vis.T))),order='F')
+    d = vis.reshape((1, max(Nfreqs, len(vis.T))))  # Do NOT use order='F'
 
     # Construct necessary operators for GCR
     Ninv_sys = (sys_model.conj().T * Ninv.diagonal() *  sys_model)
@@ -485,7 +485,7 @@ def gcr_fg_and_signal(
         )
         )
     """
-    samples = np.array(samples).reshape((vis.shape[0], -1),order='F')
+    samples = np.array(samples).reshape((vis.shape[0], -1)) # Do NOT use order F
     residuals = np.array(residuals)
     info = np.array(info)
 
@@ -675,7 +675,7 @@ def gibbs_step(
 
     # Precompute current systematics model
     # Note: Be very careful which order this is reshaped!
-    sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes),order='F').T
+    sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes)).T  # Do NOT use order F
 
     if sample_eor_fg:
         # (1) Sample signal and foreground amplitudes using GCR
