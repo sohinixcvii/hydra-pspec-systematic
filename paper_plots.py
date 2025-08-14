@@ -81,11 +81,13 @@ result_dir='/nvme2/scratch/sohini/hydra-pspec-systematic/paper_plots/'
 run_version_arr = ['low_dl_fr_0','high_dl_fr_0','low_dl_low_fr']
 conf_interval=95
 Nburn = 10
+bbox = dict(boxstyle='round', fc='blanchedalmond', ec='orange', alpha=0.5)
 
 dl_inds=[[3,4,5,6],[10,11,12,13],[3,3,3,3]]
 fig, ax = plt.subplots(4,1,figsize=(25, 20))
 i=0
 colors=['r','b','k']
+fig_labels=['I','II','III','Residuals']
 for run_version in run_version_arr:
     eor_true=np.load(result_dir+run_version+'/eor_true.npy')
     ps_sample = np.load(result_dir+run_version+'/dps-eor.npy')
@@ -123,7 +125,7 @@ for run_version in run_version_arr:
                     )
     ax[i].plot(delays, ps_true, "k:", label="True")
 
-    ax[i].legend(loc="best",fontsize=10)
+    ax[i].legend(loc="best",fontsize=20)
     ax[i].set_ylabel(r"$P(\tau)$ [arb. units]")
     # ax.set_title("EoR Delay Power Spectrum Comparison")
     ax[i].set_yscale("log")
@@ -132,7 +134,8 @@ for run_version in run_version_arr:
     for dl in sys_delays:
         ax[i].axvline(dl,ls='dotted',c=colors[i])
         ax[3].axvline(dl,ls='dotted',c=colors[i])
-
+    ax[i].text(0.95,0.07,fig_labels[i],fontsize=15, bbox=bbox,
+            transform=ax[i].transAxes, horizontalalignment='right')
 
     ax[3].plot(delays,(dps_eor_hp_pwm-ps_true),color=colors[i])
     ax[3].set_ylabel(r"$P(\tau)$ [arb. units]")
@@ -140,7 +143,8 @@ for run_version in run_version_arr:
     ax[3].grid()
 
     i=i+1
-    
+ax[3].text(0.95,0.07,fig_labels[3],fontsize=15, bbox=bbox,
+            transform=ax[3].transAxes, horizontalalignment='right')
 
 fig.tight_layout()
 plt.savefig(result_dir+'/delay_power_spectrum.pdf',bbox_inches='tight',dpi=300)

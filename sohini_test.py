@@ -28,17 +28,17 @@ Ntimes = 80 #60 #203
 Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 Nfgmodes = 12
-Niter=100
+Niter=10
 
 # op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
-op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
+# op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
 # op_dir = './paper_plots/low_dl_low_fr' # low_dl_low_fr
-# op_dir = './paper_plots/fixed_sky'
+op_dir = './paper_plots/masked_data'
 
 # Build systematics model
 # nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
-nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
-# nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
+# nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
+nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
 
 freqs=freqs[:Nfreqs]
 
@@ -174,7 +174,7 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             sys_prior=sys_prior,
             sys_initial=sys_amps_true,
             solver_tol=1e-13,
-            sample_systematics=True,
+            sample_systematics=False,
             sample_eor_fg=True,
             sample_signal_ps=True,
             sky_model_initial=(fg_true+eor_true) #(fg_true.T + eor_true)
