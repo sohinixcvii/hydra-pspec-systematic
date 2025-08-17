@@ -72,6 +72,7 @@ ps_prior = np.column_stack( (1e-7 * np.ones(Nfreqs),
 # Generate noise
 noise_ps_val = 0.0004 #0.000004 #0.000004 # 0.0004
 noise_ps_true = noise_ps_val * np.ones(Nfreqs)
+fourier_op = hp.utils.fourier_operator(Nfreqs, unitary=True)
 N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
 Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
 n = np.sqrt(N_true) @ (np.random.randn(freqs.size, Ntimes) 
