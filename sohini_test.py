@@ -28,7 +28,7 @@ Ntimes = 80 #60 #203
 Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 Nfgmodes = 12
-Niter=10
+Niter=10000
 
 # op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
 # op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
@@ -36,9 +36,9 @@ Niter=10
 op_dir = './paper_plots/masked_data'
 
 # Build systematics model
-# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
+nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
-nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
+# nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
 
 freqs=freqs[:Nfreqs]
 
