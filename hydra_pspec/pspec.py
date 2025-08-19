@@ -675,8 +675,11 @@ def gibbs_step(
 
     # Precompute current systematics model
     # Note: Be very careful which order this is reshaped!
-    sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes)).T  # Do NOT use order F
-
+    if sample_systematics:
+        sys_model = (1. + sys_modes @ sys_amps).reshape((Nfreqs, Ntimes)).T  # Do NOT use order F
+    else:
+        sys_model = np.ones_like(vis)
+        
     if sample_eor_fg:
         # (1) Sample signal and foreground amplitudes using GCR
         cr = gcr_fg_and_signal(
