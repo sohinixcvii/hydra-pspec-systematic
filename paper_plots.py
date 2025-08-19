@@ -97,7 +97,7 @@ for run_version in run_version_arr:
     df = (freqs[1] - freqs[0]) * u.MHz
     delays = np.fft.fftshift(np.fft.fftfreq(Nfreqs, d=df.to("1/ns")))
 
-    sys_delays= delays[np.unique(dl_inds[i])].value
+    sys_delays= delays[np.unique(dl_inds[i])+int(Nfreqs/2)].value
     if Nburn > 0:
         ps_sample = ps_sample[Nburn:]
         ln_post = ln_post[Nburn:]
