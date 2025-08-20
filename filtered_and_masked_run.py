@@ -30,8 +30,8 @@ freqs = np.linspace(100., 120., 120) ##120)
 Nfgmodes = 12
 Niter=10000
 
-op_dir = './paper_plots/masked_data'
-# op_dir = './paper_plots/filtered_data'
+# op_dir = './paper_plots/masked_data'
+op_dir = './paper_plots/filtered_data'
 
 # Build systematics model
 nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
@@ -94,8 +94,8 @@ gain_true = (1. + sys_modes @ sys_amps_true).reshape((Nfreqs, Ntimes))
 np.save(op_dir+'/gain_true.npy',gain_true)
 
 # Loading masked data
-d = np.load('./masked_data/masked_vis.npy')
-# d = np.load('./filtered_data/filtered_vis.npy')
+# d = np.load('./masked_data/masked_vis.npy')
+d = np.load('./filtered_data/filtered_vis.npy')
 
 # FIXME: Units or normalisation issue with ps_prior?
 ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
