@@ -33,11 +33,15 @@ Niter=10000
 # op_dir = './paper_plots/masked_data'
 op_dir = './paper_plots/filtered_data'
 
+# print("Running Masked data case")
+print("Running filtered data case")
+
 # Build systematics model
 nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
 
 freqs=freqs[:Nfreqs]
 
+print("Setup:\nNiter: {}\n".format(Niter))
 print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
 ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., Nfreqs)))
 
