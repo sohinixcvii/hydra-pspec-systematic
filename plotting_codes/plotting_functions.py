@@ -357,7 +357,7 @@ def master_plotter(
     norm='linear',
     save_flag=True,
     cmap='seismic',
-    dir=op_dir,
+    dir='../paper_plots/',
     imag_flag=True,
     vmin=None,
     vmax=None,
@@ -474,7 +474,7 @@ def master_plotter(
     return fig
 
 
-def plot_dps(vis_eor_path, res_dir, dir=op_dir, Nburn=0, conf_interval=95, ):
+def plot_dps(vis_eor_path, res_dir, dir='../paper_plots/', Nburn=0, conf_interval=95, ):
     # Load in EoR visibilities
     uvd = UVData()
     uvd.read(vis_eor_path)

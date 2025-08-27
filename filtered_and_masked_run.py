@@ -7,7 +7,7 @@ from astropy.units import Quantity
 from astropy import units
 import matplotlib.ticker as ticker
 import cmcrameri.cm as cmc
-import sys 
+import os 
 import time 
 
 start_t= time.time()
@@ -30,17 +30,18 @@ freqs = np.linspace(100., 120., 120) ##120)
 Nfgmodes = 12
 Niter=10000
 
-# op_dir = './paper_plots/masked_data'
-op_dir = './paper_plots/filtered_data'
+op_dir = './paper_plots/masked_data'
+# op_dir = './paper_plots/filtered_data'
 
-# print("Running Masked data case")
-print("Running filtered data case")
+print("Running Masked data case")
+# print("Running filtered data case")
 
 # Build systematics model
 nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
 
 freqs=freqs[:Nfreqs]
 
+print("PID: {}".format(os.getpid()))
 print("Setup:\nNiter: {}\n".format(Niter))
 print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
 ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., Nfreqs)))
@@ -98,8 +99,8 @@ gain_true = (1. + sys_modes @ sys_amps_true).reshape((Nfreqs, Ntimes))
 np.save(op_dir+'/gain_true.npy',gain_true)
 
 # Loading masked data
-# d = np.load('./masked_data/masked_vis.npy')
-d = np.load('./filtered_data/filtered_vis.npy')
+d = np.load('./masked_data/masked_vis.npy')
+# d = np.load('./filtered_data/filtered_vis.npy')
 
 # FIXME: Units or normalisation issue with ps_prior?
 ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
