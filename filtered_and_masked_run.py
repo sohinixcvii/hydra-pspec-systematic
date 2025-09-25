@@ -28,16 +28,17 @@ Ntimes = 80 #60 #203
 Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 Nfgmodes = 12
-Niter=1000
+Niter=10000
 
 # op_dir = './paper_plots/masked_data'
 # op_dir = './paper_plots/filtered_data'
 # op_dir = './paper_plots/filtered_1000'
-op_dir = './paper_plots/masked_1000'
+# op_dir = './paper_plots/masked_1000'
+op_dir = './paper_plots/true_sky'
 
 # print("Running Masked data case")
-print("Running filtered data case")
-
+# print("Running filtered data case")
+print("Running true sky case")
 # Build systematics model
 nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
 
@@ -101,9 +102,9 @@ gain_true = (1. + sys_modes @ sys_amps_true).reshape((Nfreqs, Ntimes))
 np.save(op_dir+'/gain_true.npy',gain_true)
 
 # Loading masked data
-d = np.load('./masked_data/masked_vis.npy')
+# d = np.load('./masked_data/masked_vis.npy')
 # d = np.load('./filtered_data/filtered_vis.npy')
-
+d = eor_true + fg_true
 # FIXME: Units or normalisation issue with ps_prior?
 ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
                             1e-1 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
@@ -129,14 +130,14 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             nproc=1,
             write_Niter=Niter,
             out_dir=op_dir,
-            sys_modes=sys_modes,
+            sys_modes=np.ones_like(sys_modes),
             sys_prior=sys_prior,
-            sys_initial=np.zeros_like(sys_amps_true),
+            sys_initial=np.ones_like(sys_amps_true),
             solver_tol=1e-13,
             sample_systematics=False,
             sample_eor_fg=True,
             sample_signal_ps=True,
-            sky_model_initial=(fg_true+eor_true) #(fg_true.T + eor_true)
+            sky_model_initial=np.zeros_like(fg_true+eor_true) #(fg_true.T + eor_true)
         )
 
 

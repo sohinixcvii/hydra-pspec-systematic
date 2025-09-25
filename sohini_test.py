@@ -28,18 +28,23 @@ Ntimes = 80 #60 #203
 Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 Nfgmodes = 12
-Niter=10
+Niter=30
 
-# op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
 # op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
+# op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
 # op_dir = './paper_plots/low_dl_low_fr' # low_dl_low_fr
-# op_dir = './paper_plots/masked_data'
-op_dir = './paper_plots/filtered_data'
 
+# op_dir = './paper_plots/low_dl_fr_20' # low_dl_fr_20
+# op_dir = './paper_plots/high_dl_fr_20' # high_dl_fr_20
+# op_dir = './paper_plots/low_dl_high_fr' # low_dl_high_fr
+op_dir = './paper_plots/ps_prior_check'
 # Build systematics model
-nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
-# nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
+# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
+
+nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20
+# nm_list = [(10,20), (11,20), (12,20), (13,20)] #high dl fr 20
+# nm_list = [(3,23),(3,24),(3,25),(3,26)] #low dl high fr
 
 freqs=freqs[:Nfreqs]
 
@@ -65,7 +70,8 @@ print("Shape of fgmodes: ",fgmodes.shape)
 # vis_fg_path='/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-ptsrc-gsm.uvh5' #Sohini's laptop
 # uvd.read(vis_fg_path)
 # uvd = hp.utils.form_pseudo_stokes_vis(uvd)
-# fg_true = uvd.get_data((0, 1, "xx"))  # shape (Ntimes, Nfreqs)
+# fg_true = uvd.get_data((0, 1, "xx"))  # shape
+#  (Ntimes, Nfreqs)
 # np.save('npy_data/fg_true.npy',fg_true)
 # uvd = UVData()
 # vis_eor_path='/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-eor.uvh5'
@@ -99,16 +105,6 @@ fg_true=fg_true[:Ntimes,:Nfreqs]
 # eor_true=eor_true[:Ntimes,:Nfreqs]
 
 ps_true_vis=calc_ps(eor_true)
-
-
-# plt.plot(ps_true, 'k-',label='True ps')
-# plt.plot(ps_check, 'r--',label='Checking ps')
-# plt.plot(ps_true_vis, 'b',label='PS from vis')
-# plt.xlabel("Fourier mode idx")
-# plt.ylabel("PS")
-# plt.legend()
-# plt.gcf().set_size_inches((10., 8.))
-# plt.show()
 
 # Define power spectrum prior range and draw sample of PS from EoR field
 ps_prior = np.column_stack( (1e-7 * np.ones(Nfreqs),
@@ -175,7 +171,7 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             sys_prior=sys_prior,
             sys_initial=sys_amps_true,
             solver_tol=1e-13,
-            sample_systematics=False,
+            sample_systematics=True,
             sample_eor_fg=True,
             sample_signal_ps=True,
             sky_model_initial=(fg_true+eor_true) #(fg_true.T + eor_true)

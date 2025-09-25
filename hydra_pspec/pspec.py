@@ -170,8 +170,12 @@ def sample_pspec(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
     xgrid = np.logspace(np.log10(prior.min()), np.log10(prior.max()), ngrid) #FIXME: the prior min is 0, can't have that. 
     
     samples = np.zeros(Nfreqs)
+    with open('/nvme2/scratch/sohini/hydra-pspec-systematic/paper_plots/ps_prior_check/beta.txt','a') as fn:
+        np.savetxt(fn,np.array([f"{z.real:.10e}{z.imag:+.10e}j" for z in np.asarray(beta)])[np.newaxis, :],fmt="%s",delimiter=',')
     for i in range(Nfreqs):
         samples[i] = draw_icdf_samples(alpha, beta[i], xgrid)
+    with open('/nvme2/scratch/sohini/hydra-pspec-systematic/paper_plots/ps_prior_check/samples.txt','a') as fn:
+        np.savetxt(fn,np.array([f"{z.real:.10e}{z.imag:+.10e}j" for z in np.asarray(samples)])[np.newaxis, :],delimiter=',',fmt="%s")
     return samples
 
 
@@ -926,7 +930,17 @@ def gibbs_sample(
         # Update signal PS and systematics
         signal_ps_current = signal_ps[i]
         sys_amps_current = sys_amps[i]
-
+        utils.append_gibbs_sample_h5(
+            fp=out_dir,
+            overwrite=(i == 0),          # truncate on the very first call
+            signal_amps=signal_amps[i],
+            signal_ps=signal_ps[i],
+            fg_amps=fg_amps[i],
+            sys_amps=sys_amps[i],
+            chisq=chisq[i],
+            ln_post=ln_post[i] # scalar is fine
+        )
+        
         if out_dir is not None and (i+1) % write_Niter == 0:
             # Write current set of samples to disk
             utils.write_numpy_files(

@@ -15,7 +15,7 @@ from uvtools.plot import waterfall
 #     from hera_sim.rfi import _listify
 # else:
 #     from hera_sim.utils import _listify
-    
+op_dir='paper_plots/'
     
 def plot_inputs(eor_vis, fg_vis, vis, vis_sys, bsys_test, y_test):
     

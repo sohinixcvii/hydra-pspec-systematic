@@ -290,7 +290,7 @@ def gcr_systematics(data,
     # Check solution
     if info > 0:
         # Try again with different solver
-        xsoln, info = sp.sparse.linalg.bicgstab(A, b, M=Ainv_estimate, tol=solver_tol)
+        sys_amps, info = scipy.sparse.linalg.bicgstab(A, b, M=Ainv_estimate, tol=solver_tol)
         if info != 0:
             raise ValueError("GCR solver failed after retry; info %d" \
                              % info)

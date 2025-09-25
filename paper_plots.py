@@ -19,8 +19,11 @@ from uvtools.plot import waterfall
 from uvtools.utils import FFT, fourier_freqs
 
 from astropy import units as u
-mpl.rcParams['font.size']=20
 from functions import covariance_from_pspec,sys_modes,fourier_operator
+
+mpl.rcParams['mathtext.fontset'] = 'stix'
+mpl.rcParams['font.family'] = 'STIXGeneral'
+plt.rcParams.update({'font.size': 20})
 
 # Check power spectrum
 def calc_ps(s):
@@ -75,21 +78,20 @@ n = np.sqrt(N_true) @ (np.random.randn(freqs.size, Ntimes)
 # Note factor of sqrt(2) above
 noise_ps_check = calc_ps(n.T)
 '''-----------------------------------------------------------------------------------------------'''
-
 '''------------------------DPS plots from test cases-----------------------------------------------'''
 result_dir='/nvme2/scratch/sohini/hydra-pspec-systematic/paper_plots/'
-run_version_arr = ['high_dl_fr_0','masked_data']
+run_version_arr = ['low_dl_fr_0','high_dl_fr_0','low_dl_low_fr']
 conf_interval=95
 Nburn = 10
 bbox = dict(boxstyle='round', fc='blanchedalmond', ec='orange', alpha=0.5)
 
 dl_inds=[[3,4,5,6],[10,11,12,13],[3,3,3,3]]
-fig, ax = plt.subplots(3,1,figsize=(25, 20))
+fig, ax = plt.subplots(4,1,figsize=(25, 20))
 i=0
 colors=['r','b','k']
-fig_labels=['Systematics model','Masked','Residuals']
+fig_labels=['I','II','III','Residuals']
 for run_version in run_version_arr:
-    eor_true=np.load(result_dir+run_version+'/eor_true.npy')
+    eor_true=np.load(result_dir+'high_dl_fr_0/eor_true.npy')
     ps_sample = np.load(result_dir+run_version+'/dps-eor.npy')
     ln_post = np.load(result_dir+run_version+'/ln-post.npy')
     ps_true = calc_ps(eor_true[:Ntimes,:Nfreqs])
@@ -97,6 +99,7 @@ for run_version in run_version_arr:
     df = (freqs[1] - freqs[0]) * u.MHz
     delays = np.fft.fftshift(np.fft.fftfreq(Nfreqs, d=df.to("1/ns")))
 
+    print(dl_inds[i])
     sys_delays= delays[np.unique(dl_inds[i])+int(Nfreqs/2)].value
     if Nburn > 0:
         ps_sample = ps_sample[Nburn:]
@@ -129,11 +132,19 @@ for run_version in run_version_arr:
     ax[i].set_ylabel(r"$P(\tau)$ [arb. units]")
     # ax.set_title("EoR Delay Power Spectrum Comparison")
     ax[i].set_yscale("log")
-    ax[i].grid()
+    # ax[i].grid()
     
-    for dl in sys_delays:
-        ax[i].axvline(dl,ls='dotted',c=colors[i])
-        ax[-1].axvline(dl,ls='dotted',c=colors[i])
+    x0, x1 = np.min(sys_delays), np.max(sys_delays)   # the x-range to shade
+    ax[i].axvspan(x0, x1, color=colors[i], alpha=0.1, ec=None, zorder=0.1)
+    ax[3].axvspan(x0, x1, color=colors[i], alpha=0.1, ec=None, zorder=0.1)
+
+    if i==2:
+        for dl in sys_delays:
+            ax[i].axvline(dl,ls='dotted',c=colors[i])
+            ax[3].axvline(dl,ls='dotted',c=colors[i])
+    # for dl in sys_delays:
+    #     ax[i].axvline(dl,ls='dotted',c=colors[i])
+    #     ax[-1].axvline(dl,ls='dotted',c=colors[i])
     ax[i].text(0.95,0.07,fig_labels[i],fontsize=15, bbox=bbox,
             transform=ax[i].transAxes, horizontalalignment='right')
 
@@ -141,12 +152,88 @@ for run_version in run_version_arr:
     ax[-1].set_ylabel(r"$P(\tau)$ [arb. units]")
     ax[-1].set_xlabel(r'$\tau$ [ns]')
     ax[-1].legend()
-    ax[-1].grid()
+    # ax[-1].grid()
 
     i=i+1
 ax[-1].text(0.95,0.07,fig_labels[-1],fontsize=15, bbox=bbox,
             transform=ax[-1].transAxes, horizontalalignment='right')
 
 fig.tight_layout()
-plt.savefig(result_dir+'/masked_filtered_dps.pdf',bbox_inches='tight',dpi=300)
+plt.savefig(result_dir+'/delay_power_spectrum_2.pdf',bbox_inches='tight',dpi=300)
 '''-----------------------------------------------------------------------------------------------'''
+
+
+# '''------------------------DPS plots from test cases-----------------------------------------------'''
+# result_dir='/nvme2/scratch/sohini/hydra-pspec-systematic/paper_plots/'
+# run_version_arr = ['high_dl_fr_0','masked_data','filtered_data']
+# conf_interval=95
+# Nburn = 10
+# bbox = dict(boxstyle='round', fc='blanchedalmond', ec='orange', alpha=0.5)
+
+# dl_inds=[[3,4,5,6],[10,11,12,13],[3,3,3,3]]
+# fig, ax = plt.subplots(4,1,figsize=(25, 20))
+# i=0
+# colors=['r','b','k']
+# fig_labels=['Systematics Model','Masked','Filtered','Residuals']
+# for run_version in run_version_arr:
+#     eor_true=np.load(result_dir+'high_dl_fr_0/eor_true.npy')
+#     ps_sample = np.load(result_dir+run_version+'/dps-eor.npy')
+#     ln_post = np.load(result_dir+run_version+'/ln-post.npy')
+#     ps_true = calc_ps(eor_true[:Ntimes,:Nfreqs])
+#     ps_mean = np.mean(ps_sample, axis=0)
+#     df = (freqs[1] - freqs[0]) * u.MHz
+#     delays = np.fft.fftshift(np.fft.fftfreq(Nfreqs, d=df.to("1/ns")))
+
+#     sys_delays= delays[np.unique(dl_inds[1])+int(Nfreqs/2)].value
+#     if Nburn > 0:
+#         ps_sample = ps_sample[Nburn:]
+#         ln_post = ln_post[Nburn:]
+#     # Posterior-weighted mean delay power spectrum
+#     dps_eor_hp_pwm = np.average(ps_sample, weights=ln_post, axis=0)
+    
+#     # Confidence interval of delay power spectrum posteriors
+#     percentile = conf_interval/2 + 50
+#     dps_eor_hp_ubound = np.percentile(ps_sample, percentile, axis=0)
+#     dps_eor_hp_lbound = np.percentile(ps_sample, 100-percentile, axis=0)
+#     dps_eor_hp_err = np.vstack((
+#         dps_eor_hp_pwm - dps_eor_hp_lbound,
+#         dps_eor_hp_ubound - dps_eor_hp_pwm
+#     ))
+    
+#     ax[i].errorbar(
+#                     delays,
+#                     dps_eor_hp_pwm,
+#                     yerr=np.abs(dps_eor_hp_err),
+#                     color=colors[i],
+#                     # ls="",
+#                     marker="o",
+#                     capsize=3,
+#                     label=f"Recovered ({conf_interval}% Confidence)"
+#                     )
+#     ax[i].plot(delays, ps_true, "k:", label="True")
+
+#     ax[i].legend(loc="best",fontsize=20)
+#     ax[i].set_ylabel(r"$P(\tau)$ [arb. units]")
+#     # ax.set_title("EoR Delay Power Spectrum Comparison")
+#     ax[i].set_yscale("log")
+#     ax[i].grid()
+    
+#     for dl in sys_delays:
+#         ax[i].axvline(dl,ls='dotted',c=colors[0])
+#         ax[-1].axvline(dl,ls='dotted',c=colors[0])
+#     ax[i].text(0.95,0.07,fig_labels[i],fontsize=15, bbox=bbox,
+#             transform=ax[i].transAxes, horizontalalignment='right')
+
+#     ax[-1].plot(delays,(dps_eor_hp_pwm-ps_true),color=colors[i],label=fig_labels[i])
+#     ax[-1].set_ylabel(r"$P(\tau)$ [arb. units]")
+#     ax[-1].set_xlabel(r'$\tau$ [ns]')
+#     ax[-1].legend()
+#     ax[-1].grid()
+
+#     i=i+1
+# ax[-1].text(0.95,0.07,fig_labels[-1],fontsize=15, bbox=bbox,
+#             transform=ax[-1].transAxes, horizontalalignment='right')
+
+# fig.tight_layout()
+# plt.savefig(result_dir+'/masked_filtered_dps_10k.pdf',bbox_inches='tight',dpi=300)
+# '''-----------------------------------------------------------------------------------------------'''
