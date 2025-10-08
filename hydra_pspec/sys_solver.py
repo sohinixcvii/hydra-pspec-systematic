@@ -86,7 +86,7 @@ def sys_modes(freqs_Hz, times_sec, modes):
     u, kfreq, ktime = fourier_mode_2d(freqs_Hz=freqs_Hz, 
                                       times_sec=times_sec, 
                                       modes=modes)
-    return u.reshape((-1,u.shape[0]))  # Hardcoding to order F, DO NOT CHANGE
+    return u.reshape((-1,u.shape[0]))  
 
 
 def sq_mat_tr(A,flag='r'):

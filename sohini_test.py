@@ -27,17 +27,22 @@ def calc_ps(s):
 Ntimes = 80 #60 #203
 Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
-Nfgmodes = 12
-Niter=30
+Nfgmodes = 10
+Niter=100
 
 # op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
 # op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
 # op_dir = './paper_plots/low_dl_low_fr' # low_dl_low_fr
 
-# op_dir = './paper_plots/low_dl_fr_20' # low_dl_fr_20
+# op_dir = './paper_plots/low_dl_fr_20_12modes' # low_dl_fr_20
 # op_dir = './paper_plots/high_dl_fr_20' # high_dl_fr_20
 # op_dir = './paper_plots/low_dl_high_fr' # low_dl_high_fr
-op_dir = './paper_plots/ps_prior_check'
+# op_dir = './paper_plots/ps_prior_check'
+
+op_dir = './paper_plots/1e7_bound/10modes'
+# op_dir = './paper_plots/1e7_bound/11modes'
+# op_dir = './paper_plots/1e7_bound/12modes'
+
 # Build systematics model
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
 # nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
@@ -100,6 +105,7 @@ fg_true = np.load(vis_fg_path)
 # eor_true=np.load(vis_eor_path)
 
 fg_true=fg_true[:Ntimes,:Nfreqs]
+np.save(op_dir+'/fg_true.npy',fg_true)
 # Set power spectrum
 
 # eor_true=eor_true[:Ntimes,:Nfreqs]
@@ -133,18 +139,18 @@ sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6,
                                     times_sec=lsts * 24./(2.*np.pi) * 3600., 
                                     modes=nm_list)
 
-sys_amps_true = np.array([4., 4.1, 5., -2.]) #np.array([4., 4.01])
-sys_prior = 4**2. * np.eye(sys_amps_true.size)
+sys_amps_true = np.array([4. + 1j, 4.1 + 1j, 5. + 1j, 4. + 1j]) #np.array([4., 4.01])
+sys_prior = 2**2. * np.eye(sys_amps_true.size)
 
-gain_true = (1. + sys_modes @ sys_amps_true).reshape((Nfreqs, Ntimes))
+gain_true = (1. + (sys_modes @ sys_amps_true).reshape([Nfreqs,Ntimes]).T)
 np.save(op_dir+'/gain_true.npy',gain_true)
 
 # Combine together into data
-d = gain_true.T * (fg_true + eor_true) + n.T
+d = gain_true * (fg_true + eor_true) + n.T
 
 # FIXME: Units or normalisation issue with ps_prior?
-ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
-                            1e-1 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
+ps_prior = np.column_stack( (1e-4 * np.ones(freqs.size),
+                            10 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
 
 flags_i = np.ones((len(freqs),), dtype=int)
 
