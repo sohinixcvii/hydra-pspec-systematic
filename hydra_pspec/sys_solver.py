@@ -86,7 +86,7 @@ def sys_modes(freqs_Hz, times_sec, modes):
     u, kfreq, ktime = fourier_mode_2d(freqs_Hz=freqs_Hz, 
                                       times_sec=times_sec, 
                                       modes=modes)
-    return u.reshape((u.shape[0],-1))[0]  #DO NOT CHANGE RESHAPING. No good, very bad things happen.   
+    return u.reshape((u.shape[0],-1))  #DO NOT CHANGE RESHAPING. No good, very bad things happen.   
 
 
 def sq_mat_tr(A,flag='r'):
