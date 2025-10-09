@@ -28,7 +28,7 @@ Ntimes = 80 #60 #203
 Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 Nfgmodes = 10
-Niter=100
+Niter=10000
 
 # op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
 # op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
@@ -39,7 +39,7 @@ Niter=100
 # op_dir = './paper_plots/low_dl_high_fr' # low_dl_high_fr
 # op_dir = './paper_plots/ps_prior_check'
 
-op_dir = './paper_plots/1e7_bound/10modes'
+op_dir = './paper_plots/1e7_bound/10modes_fg_fit'
 # op_dir = './paper_plots/1e7_bound/11modes'
 # op_dir = './paper_plots/1e7_bound/12modes'
 
@@ -105,7 +105,7 @@ fg_true = np.load(vis_fg_path)
 # eor_true=np.load(vis_eor_path)
 
 fg_true=fg_true[:Ntimes,:Nfreqs]
-np.save(op_dir+'/fg_true.npy',fg_true)
+# np.save(op_dir+'/fg_true.npy',fg_true)
 # Set power spectrum
 
 # eor_true=eor_true[:Ntimes,:Nfreqs]
@@ -140,17 +140,31 @@ sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6,
                                     modes=nm_list)
 
 sys_amps_true = np.array([4. + 1j, 4.1 + 1j, 5. + 1j, 4. + 1j]) #np.array([4., 4.01])
-sys_prior = 2**2. * np.eye(sys_amps_true.size)
+sys_prior = 100**2. * np.eye(sys_amps_true.size)
 
 gain_true = (1. + (sys_modes @ sys_amps_true).reshape([Nfreqs,Ntimes]).T)
 np.save(op_dir+'/gain_true.npy',gain_true)
 
+
+'''------------Creating dummy systematics-------------------'''
+A = fgmodes[:, :Nfgmodes]   # (60, 10)
+B = fg_true.T               # (60, 80)
+
+# Works for real or complex
+X_hat, *_ = np.linalg.lstsq(A, B, rcond=None)  # X_hat: (10, 80)
+fg_amps_fit = X_hat
+fg_fit = (fgmodes @ fg_amps_fit).T
+np.save(op_dir+'/fg_true_fit.npy',fg_fit)
+np.save(op_dir+'/fgmodes.npy',fgmodes)
+
+'''-----------------------------------------------------------'''
 # Combine together into data
-d = gain_true * (fg_true + eor_true) + n.T
+# d = gain_true * (fg_true + eor_true) + n.T #Simulated FG
+d = gain_true * (fg_fit + eor_true) + n.T
 
 # FIXME: Units or normalisation issue with ps_prior?
-ps_prior = np.column_stack( (1e-4 * np.ones(freqs.size),
-                            10 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
+ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
+                            1e-1 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
 
 flags_i = np.ones((len(freqs),), dtype=int)
 
@@ -180,7 +194,7 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             sample_systematics=True,
             sample_eor_fg=True,
             sample_signal_ps=True,
-            sky_model_initial=(fg_true+eor_true) #(fg_true.T + eor_true)
+            sky_model_initial=(fg_fit+eor_true) #(fg_true.T + eor_true)
         )
 
 

@@ -68,7 +68,7 @@ def fourier_mode_2d(freqs_Hz, times_sec, modes, box=None):
         idx_t = np.where(ntime == nt)[0][0]
         #mode_idxs.append( (idx_f, idx_t) )
 
-        print(kfreq[idx_f], ktime[idx_t])
+        # print(kfreq[idx_f], ktime[idx_t])
 
         # Add basis function to operator
         basis_fns[i] = np.exp(2.*np.pi*1.j * (  kfreq[idx_f] * f[:,np.newaxis]
