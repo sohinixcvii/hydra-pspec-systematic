@@ -704,8 +704,7 @@ def gibbs_step(
         # Update sky model (without multiplicative systematics); sum of EoR + FG model
         sky_model = (signal_amps + fg_amps @ fg_modes.T)
     else:
-        signal_amps = 0.
-        fg_amps = 0.
+        sky_model = sky_model
 
     #import pylab as plt
     #plt.matshow(sky_model.real)

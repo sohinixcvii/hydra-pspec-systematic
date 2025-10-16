@@ -300,11 +300,9 @@ def gcr_systematics(data,
     
     # Calculate |Ax - b|
     residuals = np.sqrt(np.sum(np.abs(A @ sys_amps - b)**2.))
-    
     # Re-pack separate real and imaginary parts into complex vector
-    sys_amps = 1.0 * sys_amps[:Nsys_modes] \
-             + 1.j * sys_amps[Nsys_modes:]
-
+    sys_amps = 1.0 * sys_amps[:Nsys_modes].real \
+             + 1.j * sys_amps[Nsys_modes:].real
     if verbose:
         print(f"{time.time() - t_start:<12.1f}", end="\t")
         print(f"{info:<8.1f}", end=" ")
