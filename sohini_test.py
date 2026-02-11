@@ -28,16 +28,16 @@ Ntimes = 80 #60 #203
 Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 Nfgmodes = 10
-Niter=2000
+Niter=10000
 
-op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
-# op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
+# op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
+op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
 # op_dir = './paper_plots/low_dl_low_fr' # low_dl_low_fr
 
-# op_dir = './paper_plots/low_dl_fr_20_12modes' # low_dl_fr_20
+# op_dir = './paper_plots/low_dl_fr_20' # low_dl_fr_20
 # op_dir = './paper_plots/high_dl_fr_20' # high_dl_fr_20
 # op_dir = './paper_plots/low_dl_high_fr' # low_dl_high_fr
-# op_dir = './paper_plots/ps_prior_check'
+# op_dir = './paper_plots/alt_bsys'
 
 # op_dir = './paper_plots/1e7_bound/10modes'
 # op_dir = './paper_plots/1e7_bound/10modes_fg_fit_2k'
@@ -45,8 +45,8 @@ op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
 # op_dir = './paper_plots/1e7_bound/12modes'
 
 # Build systematics model
-nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
-# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
+# nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
+nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
 
 # nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20
 # nm_list = [(10,20), (11,20), (12,20), (13,20)] #high dl fr 20
@@ -124,7 +124,7 @@ S_sample = hp.pspec.covariance_from_pspec(ps_sample, fourier_op)
 Sinv_sample = hp.pspec.covariance_from_pspec(1. / ps_sample, fourier_op)
 
 # Generate noise
-noise_ps_val = 0.0004 #0.000004 #0.000004 # 0.0004
+noise_ps_val = 0.0004 #0.000004 #0.000004 # 0.0004 -- usual case
 noise_ps_true = noise_ps_val * np.ones(Nfreqs)
 N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
 Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
@@ -140,7 +140,7 @@ sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6,
                                     times_sec=lsts * 24./(2.*np.pi) * 3600., 
                                     modes=nm_list)
 
-sys_amps_true = np.array([4. + 1j, 4.1 + 1j, 5. + 1j, 4. + 1j]) #np.array([4., 4.01])
+sys_amps_true = np.array([1. + 4j, 2 + 3j, 3. + 2j, 4. + 1j]) #np.array([4., 4.01])
 # sys_amps_true = np.array([0.001, 0.001, 0.001, 0.001]) #np.array([4., 4.01])
 sys_prior = 100**2. * np.eye(sys_amps_true.size)
 
@@ -149,14 +149,14 @@ np.save(op_dir+'/gain_true.npy',gain_true)
 
 
 '''------------Creating dummy foregrounds-------------------'''
-# A = fgmodes[:, :Nfgmodes]   # (60, 10)
-# B = fg_true.T               # (60, 80)
+A = fgmodes[:, :Nfgmodes]   # (60, 10)
+B = fg_true.T               # (60, 80)
 
-# # Works for real or complex
-# X_hat, *_ = np.linalg.lstsq(A, B, rcond=None)  # X_hat: (10, 80)
-# fg_amps_fit = X_hat
-# fg_fit = (fgmodes @ fg_amps_fit).T
-# np.save(op_dir+'/fg_true_fit.npy',fg_fit)
+# Works for real or complex
+X_hat, *_ = np.linalg.lstsq(A, B, rcond=None)  # X_hat: (10, 80)
+fg_amps_fit = X_hat
+fg_fit = (fgmodes @ fg_amps_fit).T
+np.save(op_dir+'/fg_true_fit.npy',fg_fit)
 np.save(op_dir+'/fgmodes.npy',fgmodes)
 
 '''-----------------------------------------------------------'''

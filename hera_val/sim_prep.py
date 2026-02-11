@@ -13,7 +13,7 @@ from scipy import stats
 from scipy.interpolate import RectBivariateSpline, interp1d
 from warnings import warn
 
-from data import DATA_PATH
+# from .data import DATA_PATH
 from pyuvdata import UVData
 from pyuvdata.utils import polstr2num
 from hera_cal.abscal import get_d2m_time_map
@@ -23,7 +23,7 @@ from hera_sim import Simulator
 from hera_sim.noise import thermal_noise
 
 import hera_sim
-if hera_sim.__version__.startswith('0'):
+if hera_sim.version('hera_sim').startswith('0'):
     from hera_sim.rfi import _listify
 else:
     from hera_sim.utils import _listify
@@ -67,7 +67,7 @@ def add_noise(sim, Trx=100, seed=None, ret_cmp=True):
         seed = _gen_seed(seed)
         np.random.seed(seed)
 
-    noise = np.zeros_like(sim.data_array, dtype=complex) if ret_cmp else sim.data_array
+    noise = np.zeros_like(sim.data_array, dtype='complex') if ret_cmp else sim.data_array
 
     for pol in ('xx', 'yy'):
         autos = sim.get_data(*antpair, pol) * Jy_to_K[None, :]
@@ -149,6 +149,109 @@ def add_gains(
     else:
         return sim
 
+# def add_reflections(
+#     sim, 
+#     seed=None, 
+#     dly=1200, 
+#     dly_spread=0, 
+#     amp=1e-3, 
+#     amp_scale=0, 
+#     time_vary_params=None,
+#     ret_cmp=True
+# ):
+#     """
+#     Add per-antenna reflection gains to the simulation.
+
+#     Parameters
+#     ----------
+#     sim : :class:`hera_sim.Simulator` or :class:`pyuvdata.UVData`
+#         The object containing the simulation data and metadata.
+#     seed : int, optional
+#         The random seed. Not used if not specified. Use value 'random' 
+#         to have a seed automatically generated.
+#     dly : float, optional
+#         Delay at which the reflection appears, in nanoseconds. 
+#         Default is 1200 ns.
+#     dly_spread : float, optional
+#         Absolute amount the delays vary between antennas, in ns. 
+#         Default is 0 ns.
+#     amp : float, optional
+#         Amplitude of the reflection. Default is 1e-3.
+#     amp_scale : float, optional
+#         Fractional variation in the reflection amplitude between antennas.
+#         Default is 0. 
+#     time_vary_params : dict, optional
+#         Parameters for adding time variation to the gains. Keys should 
+#         be any of ('amp', 'amplitude', 'phs', 'phase'). Values should 
+#         be the set of variation parameters (parameters prefixed by 
+#         'variation' in the ``vary_gains_in_time`` function) to be used.
+#         Default behavior is to leave the gains constant in time.
+#         See ``vary_gains_in_time`` function for details on parameters.
+
+#     Returns
+#     -------
+#     corrupted_sim : :class:`pyuvdata.UVData`
+#         Simulation with reflection gains applied. 
+#     gains : dict
+#         Dictionary mapping antenna numbers to reflection gains as a 
+#         function of frequency (and potentially time).
+#     """
+#     # Setup
+#     sim = _sim_to_uvd(sim)
+#     freqs_GHz = np.unique(sim.freq_array) / 1e9
+#     ants = sim.telescope.antenna_numbers
+#     Nants = sim.Nants_data
+#     print(seed)
+#     seed = _gen_seed(seed)
+#     gains = {ant: np.ones(freqs_GHz.size, dtype='complex') for ant in ants}
+
+#     # Support multi-reflections.
+#     amps = _listify(amp)
+#     dlys = _listify(dly)
+#     seeds = _listify(seed)
+#     dly_spreads = _listify(dly_spread)
+#     amp_scales = _listify(amp_scale)
+#     if len(seeds) == 1:
+#         seeds *= len(amps)
+#     if len(dly_spreads) == 1:
+#         dly_spreads *= len(amps)
+#     if len(amp_scales) == 1:
+#         amp_scales *= len(amps)
+#     if any(
+#         len(pair[0]) != len(pair[1])
+#         for pair in itertools.combinations(
+#             (amps, dlys, seeds, dly_spreads, amp_scales), 2
+#         )
+#     ):
+#         raise ValueError(
+#             "It appears as if you are trying to simulate multiple reflections "
+#             "but have provided parameters with different lengths. Please check "
+#             "your input to the reflection simulation."
+#         )
+
+#     iterator = zip(amps, dlys, seeds, dly_spreads, amp_scales)
+#     for amp, dly, seed, dly_spread, amp_scale in iterator:
+#         # Randomize parameters in a realistic way.
+#         if seed is not None:
+#             np.random.seed(seed)
+#         delays_ns = stats.norm.rvs(dly, dly_spread, Nants)
+#         phases = stats.uniform.rvs(0, 2*np.pi, Nants)
+#         amplitudes = amp * stats.norm.rvs(1, amp_scale, Nants)
+
+#         # Simulate and apply the gains.
+#         reflections = hera_sim.sigchain.gen_reflection_gains(
+#             freqs_GHz, ants, amp=amplitudes, dly=delays_ns, phs=phases
+#         )
+#         gains = {ant: gain * reflections[ant] for ant, gain in gains.items()}
+
+#     apply_gains(sim, gains, time_vary_params)
+
+#     if ret_cmp:
+#         return sim, gains
+#     else:
+#         return sim
+
+
 def add_reflections(
     sim, 
     seed=None, 
@@ -159,50 +262,14 @@ def add_reflections(
     time_vary_params=None,
     ret_cmp=True
 ):
-    """
-    Add per-antenna reflection gains to the simulation.
-
-    Parameters
-    ----------
-    sim : :class:`hera_sim.Simulator` or :class:`pyuvdata.UVData`
-        The object containing the simulation data and metadata.
-    seed : int, optional
-        The random seed. Not used if not specified. Use value 'random' 
-        to have a seed automatically generated.
-    dly : float, optional
-        Delay at which the reflection appears, in nanoseconds. 
-        Default is 1200 ns.
-    dly_spread : float, optional
-        Absolute amount the delays vary between antennas, in ns. 
-        Default is 0 ns.
-    amp : float, optional
-        Amplitude of the reflection. Default is 1e-3.
-    amp_scale : float, optional
-        Fractional variation in the reflection amplitude between antennas.
-        Default is 0. 
-    time_vary_params : dict, optional
-        Parameters for adding time variation to the gains. Keys should 
-        be any of ('amp', 'amplitude', 'phs', 'phase'). Values should 
-        be the set of variation parameters (parameters prefixed by 
-        'variation' in the ``vary_gains_in_time`` function) to be used.
-        Default behavior is to leave the gains constant in time.
-        See ``vary_gains_in_time`` function for details on parameters.
-
-    Returns
-    -------
-    corrupted_sim : :class:`pyuvdata.UVData`
-        Simulation with reflection gains applied. 
-    gains : dict
-        Dictionary mapping antenna numbers to reflection gains as a 
-        function of frequency (and potentially time).
-    """
+    """Add per-antenna reflection gains to the simulation."""
     # Setup
     sim = _sim_to_uvd(sim)
     freqs_GHz = np.unique(sim.freq_array) / 1e9
-    ants = sim.antenna_numbers
+    ants = sim.telescope.antenna_numbers
     Nants = len(ants)
-    seed = _gen_seed(seed)
-    gains = {ant: np.ones(freqs_GHz.size, dtype=complex) for ant in ants}
+    
+    gains = {ant: np.ones(freqs_GHz.size, dtype='complex') for ant in ants}
 
     # Support multi-reflections.
     amps = _listify(amp)
@@ -210,6 +277,7 @@ def add_reflections(
     seeds = _listify(seed)
     dly_spreads = _listify(dly_spread)
     amp_scales = _listify(amp_scale)
+    
     if len(seeds) == 1:
         seeds *= len(amps)
     if len(dly_spreads) == 1:
@@ -230,18 +298,24 @@ def add_reflections(
 
     iterator = zip(amps, dlys, seeds, dly_spreads, amp_scales)
     for amp, dly, seed, dly_spread, amp_scale in iterator:
+        # Process the seed for this reflection
+        seed = _gen_seed(seed)
+        
         # Randomize parameters in a realistic way.
         if seed is not None:
-            np.random.seed(int(seed))
+            np.random.seed(seed)
+        
+        # Generate per-antenna variations
         delays_ns = stats.norm.rvs(dly, dly_spread, Nants)
         phases = stats.uniform.rvs(0, 2*np.pi, Nants)
         amplitudes = amp * stats.norm.rvs(1, amp_scale, Nants)
 
-        # Simulate and apply the gains.
-        reflections = hera_sim.sigchain.gen_reflection_gains(
-            freqs_GHz, ants, amp=amplitudes, dly=delays_ns, phs=phases
-        )
-        gains = {ant: gain * reflections[ant] for ant, gain in gains.items()}
+        # Simulate the gains for each antenna individually
+        for i, ant in enumerate(ants):
+            reflection_gain = hera_sim.sigchain.gen_reflection_gains(
+                freqs_GHz, [ant], amp=amplitudes[i], dly=delays_ns[i], phs=phases[i]
+            )
+            gains[ant] = gains[ant] * reflection_gain[ant]
 
     apply_gains(sim, gains, time_vary_params)
 
@@ -249,7 +323,6 @@ def add_reflections(
         return sim, gains
     else:
         return sim
-
 
 def add_reflection_spectrum(
     sim,
@@ -368,11 +441,10 @@ def add_xtalk(
     seed = _gen_seed(seed)
 
     if ret_cmp:
-        xtalk = np.zeros_like(sim.data_array, dtype=complex)
+        xtalk = np.zeros_like(sim.data_array, dtype='complex')
     if seed is not None:
         np.random.seed(seed)
     for antpairpol in sim.get_antpairpols():
-        print(antpairpol)
         ai, aj, pol = antpairpol
         if ai == aj:
             continue
@@ -385,7 +457,10 @@ def add_xtalk(
 
         # Generate random phases and pull the autocorrelation.
         phs = stats.uniform.rvs(0, 2*np.pi, Ncopies)
-        autovis = sim.get_data(ai, aj, pol)
+        try:
+            autovis = sim.get_data(ai, ai, pol)
+        except KeyError:
+            continue
         if ret_cmp:
             xtalk[this_slice] = gen_xtalk(
                 autovis, freqs_GHz, amps * damps, dlys + ddlys, phs
@@ -411,11 +486,11 @@ def apply_gains(sim, gains, time_vary_params=None):
         gains = vary_gains_in_time(gains, times, mode, **vary_params)
     for antpairpol in sim.get_antpairpols():
         blt_inds, _, pol_inds = sim._key2inds(antpairpol)
-        this_slice = (blt_inds, 0, slice(None), pol_inds[0])
+        this_slice = (blt_inds, slice(None), pol_inds[0])
         vis = sim.get_data(antpairpol)
         sim.data_array[this_slice] = hera_sim.sigchain.apply_gains(
             vis, gains, antpairpol[:2]
-        )
+        )[:,:,np.newaxis]
         del vis
     return
 
@@ -532,11 +607,11 @@ def vary_gains_in_time(
 
 def gen_xtalk(autovis, freqs, xamps, xdlys, xphs):
     """Generate a series of cross-coupling crosstalk visibilities."""
-    xtalk = np.zeros_like(autovis, dtype=complex)
+    xtalk = np.zeros_like(autovis, dtype='complex')
     _gen_xtalk = hera_sim.sigchain.gen_cross_coupling_xtalk
     for amp, dly, phs in zip(xamps, xdlys, xphs):
-        xtalk += _gen_xtalk(freqs, autovis) #, amp, dly, phs)
-        xtalk += _gen_xtalk(freqs, autovis) #, amp, -dly, phs)
+        xtalk += _gen_xtalk(freqs, autovis, amp, dly, phs)
+        xtalk += _gen_xtalk(freqs, autovis, amp, -dly, phs)
     return xtalk
 
 SYSTEMATICS_SIMULATORS = {
@@ -546,6 +621,134 @@ SYSTEMATICS_SIMULATORS = {
     'reflections' : add_reflections,
     'xtalk' : add_xtalk
 }
+
+# def apply_systematics(
+#     sim, 
+#     seed=None,
+#     noise=None, 
+#     gains=None, 
+#     reflection_spectrum=None,
+#     reflections=None,
+#     xtalk=None,
+#     return_systematics=False,
+#     verbose=False
+# ):
+#     """One-stop shop for applying systematics to a simulation.
+
+#     This function handles the application of a handful of systematic 
+#     effects, provided appropriate parameters for simulating the 
+#     desired set of systematics. For more information on how the 
+#     systematics are simulated, please see the lower-level ``add_x`` 
+#     functions and their documentation.
+
+#     Parameters
+#     ----------
+#     sim : :class:`pyuvdata.UVData`
+#         Simulation object containing simulation data/metadata. May be 
+#         a subclass thereof, or something that may be converted to a 
+#         :class:`pyuvdata.UVData` object (such as a path to a file).
+#     seed : {int, None, or 'random'}, optional
+#         The random seed. If None, then this parameter is ignored. If 
+#         'random', then a seed is generated from the system time. See 
+#         :func:`_gen_seed` for details. Default is to not use a seed. 
+#         If this is specified, then it is used as the default seed for 
+#         any systematics that do not have their `seed` parameter defined. 
+#     noise : dict, optional
+#         Dictionary of parameters for simulating noise. See :func:`add_noise` 
+#         for further information. Default is to not simulate noise.
+#     gains : dict, optional
+#         Dictionary of parameters for simulating bandpass gains. See 
+#         :func:`add_gains` for further information. Default is to not 
+#         simulate bandpass gains.
+#     reflections : dict, optional
+#         Dictionary of parameters for simulating cable reflections. See 
+#         :func:`add_reflections` for further information. Default is to 
+#         not simulate cable reflections.
+#     xtalk : dict, optional
+#         Dictionary of parameters for simulating cross-coupling crosstalk. 
+#         See :func:`add_xtalk` for further information. Default is to not 
+#         simulate crosstalk.
+#     return_systematics : bool, optional
+#         Whether to return the simulated systematics. If True, then 
+#         systematics are returned as a dictionary, with the names of the 
+#         systematics as the keys. The values are either data arrays (in the 
+#         format of :class:`pyuvdata.UVData` data arrays) or dictionaries 
+#         mapping antennas to gains, depending on the systematic. (Noise 
+#         and crosstalk are visibility-like, so they are returned as data 
+#         arrays; reflections and bandpass gains are per-antenna quantities, 
+#         which are optionally time-dependent, and so are returned as mappings 
+#         from antenna numbers to gains.) Default is to not return systematics. 
+#         !! WARNING !! If you are simulating effects for large data arrays, 
+#         then enabling this feature may potentially result in a memory 
+#         overflow!
+#     verbose : bool, optional
+#         Whether to print statements tracking the progress of the systematics 
+#         simulation and application. Primarily used for debugging. Default 
+#         is to not print updates.
+
+#     Returns
+#     -------
+#     corrupted_sim : :class:`pyuvdata.UVData`
+#         Simulation with systematics applied.
+#     systematics : dict
+#         Dictionary mapping systematics to their data arrays or gain 
+#         dictionaries. None is returned if ``return_systematics`` is False.
+#     parameters : dict
+#         Dictionary mapping systematic names to simulation parameters 
+#         required to reconstruct the simulated systematic effects.
+#     """
+#     if verbose:
+#         print("Extracting systematics parameters...\n")
+
+#     # Collect all of the parameters into a dictionary.
+#     parameters = {
+#         'noise' : noise,
+#         'gains' : gains,
+#         'reflection_spectrum': reflection_spectrum,
+#         'reflections' : reflections,
+#         'xtalk' : xtalk
+#     }
+  
+#     # Update random seeds in case user wants to "randomly" generate seeds.
+#     for params in parameters.values():
+#         if params is not None:
+#             params['seed'] = _gen_seed(params.get('seed', seed))
+
+#     # Apply the systematics and track the results.
+#     # Simulating this and keeping all the systematics may be very 
+#     # memory-intensive, so sometimes we might not want to keep 
+#     # track of the intermediate products.
+#     systematics = {} if return_systematics else None
+#     sim = _sim_to_uvd(sim)
+#     for systematic, params in parameters.items():
+#         if params is None:
+#             continue
+#         if verbose:
+#             print(f"Simulating {systematic}:")
+#             print(f"-----------"+"-"*len(systematic))
+#             print(f"Params:")
+#             for param, value in params.items():
+#                 print(f"\t{param} : {value}")
+#             print("Min/Mean/Max before: ", np.min(sim.data_array),
+#                   np.mean(sim.data_array), np.max(sim.data_array))
+
+#         # This is a bit of a hack, but I can't think of a better way...
+#         t = time.time()
+#         add_systematic = SYSTEMATICS_SIMULATORS[systematic]
+
+#         if return_systematics:
+#             sim, systematics[systematic] = add_systematic(sim, ret_cmp=True, **params)
+#         else:
+#             sim = add_systematic(sim, ret_cmp=False, **params)
+
+#         if verbose:
+#             print("Min/Mean/Max after: ", np.min(sim.data_array),
+#                   np.mean(sim.data_array), np.max(sim.data_array))
+
+#             print(f"Done in {time.time() - t} sec.")
+#             print()
+#     return sim, systematics, parameters
+
 
 def apply_systematics(
     sim, 
@@ -559,68 +762,7 @@ def apply_systematics(
     verbose=False
 ):
     """One-stop shop for applying systematics to a simulation.
-
-    This function handles the application of a handful of systematic 
-    effects, provided appropriate parameters for simulating the 
-    desired set of systematics. For more information on how the 
-    systematics are simulated, please see the lower-level ``add_x`` 
-    functions and their documentation.
-
-    Parameters
-    ----------
-    sim : :class:`pyuvdata.UVData`
-        Simulation object containing simulation data/metadata. May be 
-        a subclass thereof, or something that may be converted to a 
-        :class:`pyuvdata.UVData` object (such as a path to a file).
-    seed : {int, None, or 'random'}, optional
-        The random seed. If None, then this parameter is ignored. If 
-        'random', then a seed is generated from the system time. See 
-        :func:`_gen_seed` for details. Default is to not use a seed. 
-        If this is specified, then it is used as the default seed for 
-        any systematics that do not have their `seed` parameter defined. 
-    noise : dict, optional
-        Dictionary of parameters for simulating noise. See :func:`add_noise` 
-        for further information. Default is to not simulate noise.
-    gains : dict, optional
-        Dictionary of parameters for simulating bandpass gains. See 
-        :func:`add_gains` for further information. Default is to not 
-        simulate bandpass gains.
-    reflections : dict, optional
-        Dictionary of parameters for simulating cable reflections. See 
-        :func:`add_reflections` for further information. Default is to 
-        not simulate cable reflections.
-    xtalk : dict, optional
-        Dictionary of parameters for simulating cross-coupling crosstalk. 
-        See :func:`add_xtalk` for further information. Default is to not 
-        simulate crosstalk.
-    return_systematics : bool, optional
-        Whether to return the simulated systematics. If True, then 
-        systematics are returned as a dictionary, with the names of the 
-        systematics as the keys. The values are either data arrays (in the 
-        format of :class:`pyuvdata.UVData` data arrays) or dictionaries 
-        mapping antennas to gains, depending on the systematic. (Noise 
-        and crosstalk are visibility-like, so they are returned as data 
-        arrays; reflections and bandpass gains are per-antenna quantities, 
-        which are optionally time-dependent, and so are returned as mappings 
-        from antenna numbers to gains.) Default is to not return systematics. 
-        !! WARNING !! If you are simulating effects for large data arrays, 
-        then enabling this feature may potentially result in a memory 
-        overflow!
-    verbose : bool, optional
-        Whether to print statements tracking the progress of the systematics 
-        simulation and application. Primarily used for debugging. Default 
-        is to not print updates.
-
-    Returns
-    -------
-    corrupted_sim : :class:`pyuvdata.UVData`
-        Simulation with systematics applied.
-    systematics : dict
-        Dictionary mapping systematics to their data arrays or gain 
-        dictionaries. None is returned if ``return_systematics`` is False.
-    parameters : dict
-        Dictionary mapping systematic names to simulation parameters 
-        required to reconstruct the simulated systematic effects.
+    ...
     """
     if verbose:
         print("Extracting systematics parameters...\n")
@@ -634,15 +776,13 @@ def apply_systematics(
         'xtalk' : xtalk
     }
   
-    # Update random seeds in case user wants to "randomly" generate seeds.
+    # Set default seed for any systematic that doesn't have one
+    # But DON'T call _gen_seed here - let each function handle it
     for params in parameters.values():
-        if params is not None:
-            params['seed'] = _gen_seed(params.get('seed', seed))
+        if params is not None and 'seed' not in params:
+            params['seed'] = seed
 
     # Apply the systematics and track the results.
-    # Simulating this and keeping all the systematics may be very 
-    # memory-intensive, so sometimes we might not want to keep 
-    # track of the intermediate products.
     systematics = {} if return_systematics else None
     sim = _sim_to_uvd(sim)
     for systematic, params in parameters.items():
@@ -657,7 +797,6 @@ def apply_systematics(
             print("Min/Mean/Max before: ", np.min(sim.data_array),
                   np.mean(sim.data_array), np.max(sim.data_array))
 
-        # This is a bit of a hack, but I can't think of a better way...
         t = time.time()
         add_systematic = SYSTEMATICS_SIMULATORS[systematic]
 
@@ -673,7 +812,6 @@ def apply_systematics(
             print(f"Done in {time.time() - t} sec.")
             print()
     return sim, systematics, parameters
-
 # ------- Functions for preparing files ------- #
 
 def adjust_sim_to_data(sim_file, data_files, verbose=False):
@@ -1120,7 +1258,7 @@ def interpolate_to_reference(sim_uvd, ref_uvd):
     new_baseline_array = np.empty(new_Nblts, dtype=int)
     new_uvw_array = np.empty((new_Nblts, 3), dtype=float)
     new_data = np.zeros(
-        (new_Nblts, 1, ref_uvd.Nfreqs, sim_uvd.Npols), dtype=complex
+        (new_Nblts, 1, ref_uvd.Nfreqs, sim_uvd.Npols), dtype='complex'
     )
 
     # Fill in the new metadata, sorting the same way HERA data is sorted.
@@ -1296,31 +1434,43 @@ def _sim_to_uvd(sim):
         sim = sim_
     return sim
 
-def _gen_seed(seed):
-    if seed is None or isinstance(seed, int):
-        return seed
-    elif isinstance(seed, str) and seed == 'random':
-        return time.time_ns() % 2**32
-    elif isinstance(seed, (list, np.ndarray)) and all(isinstance(x, int) for x in seed):
-        # Handle list or numpy array of integers
-        return seed
-    else:
-        # raise ValueError(f"Invalid seed value: {seed}")
-        return np.array(seed)
-        # return 42
-
 # def _gen_seed(seed):
 #     """Generate a random seed pseudo-randomly if desired."""
-#     print("Seed shape: ",np.shape(seed)," seed value: ",seed)
 #     if seed is None or type(seed) is int:
-#         print("first triggered")
-#         return seed
-#     elif len(seed)>0 and type(all(seed)) is int:
-#         print("second triggered")
 #         return seed
 #     elif seed == 'random':
-#         print("Third triggered")
 #         return time.time_ns() % 2**32
+
+def _gen_seed(seed):
+    """Generate a random seed pseudo-randomly if desired."""
+    # Handle None and integer types (including numpy integers)
+    if seed is None:
+        return seed
+    
+    # Convert numpy scalars to Python types
+    if isinstance(seed, (np.integer, np.floating)):
+        return int(seed)
+    
+    # Handle regular Python integers
+    if isinstance(seed, int):
+        return seed
+    
+    # Handle the 'random' string
+    if isinstance(seed, str) and seed == 'random':
+        return time.time_ns() % 2**32
+    
+    # Handle arrays/lists - this should not happen in normal usage
+    if isinstance(seed, (list, np.ndarray)):
+        raise ValueError(
+            f"seed must be None, an integer, or 'random', not an array/list. "
+            f"Got type: {type(seed)}"
+        )
+    
+    # Catch any other unexpected types
+    raise ValueError(
+        f"Invalid seed type: {type(seed)}. "
+        f"Expected None, int, or 'random', got {seed}"
+    )
 
 def _get_array_intersection(sim_antpos, ref_antpos, tol=1.0):
     """Find the optimal choice of simulation subarray and return it."""
