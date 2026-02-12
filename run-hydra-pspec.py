@@ -13,6 +13,7 @@ from jsonargparse import ArgumentParser, ActionConfigFile
 from jsonargparse.typing import Path_fr, Path_dw
 from pyuvdata import UVData
 from astropy.units import Quantity
+from hydra_pspec import utils, sys_solver
 # import cProfile
 
 # pr=cProfile.Profile()
@@ -528,7 +529,7 @@ for data in list_of_baselines:
         # ps_prior[0, ps_prior_inds] = args.ps_prior_hi
         # ps_prior[1, ps_prior_inds] = args.ps_prior_lo
         ps_prior[0, ps_prior_inds] = 100    
-        ps_prior[1, ps_prior_inds] = 0.1
+        ps_prior[1, ps_prior_inds] = 0.01
     if rank == 0:
         verbose = args.verbose
     else:
@@ -538,31 +539,147 @@ for data in list_of_baselines:
         print(f"Rank:     {rank}")
         print(f"Baseline: {antpair}", end="\n\n")
 
-# FIXME: Saving priors
-np.save('/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_files/ps_prior.npy',ps_prior,allow_pickle=False)
+# times_sec = lsts * 24./(2.*np.pi) * 3600.
+# nm_list = [(0, 2), (10, 4)]
+# sys_modes_operator = sys_solver.sys_modes(freqs_Hz=freqs_for_op, 
+#                                       times_sec=times_sec, 
+#                                       modes=nm_list)
+# sys_amps_true = np.array([4., 4.01])
 
-# print("Prior: ", ps_prior)
+'''-----------------------test code to make data and then run the sampler--------------'''
+np.random.seed(11)
+
+# Check power spectrum
+def calc_ps(s):
+    # NOTE: This uses inverse FFT instead of FFT to get the right normalisation
+    axes = (1,)
+    sk = np.fft.ifftshift(s, axes=axes)
+    sk = np.fft.fftn(sk, axes=axes)
+    sk = np.fft.fftshift(sk, axes=axes)
+    Nobs, Nfreqs = sk.shape
+    return np.mean(sk * sk.conj(), axis=0).real / Nfreqs # CHECK: This takes an average
+
+Ntimes = 60 #60 #203
+Nfreqs = 40
+freqs = np.linspace(100., 120., 120) ##120) 
+Nfgmodes = 12
+
+# op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
+op_dir = './hydra_integration_tests/low_dl_fr_0' # low_dl_fr_0
+# op_dir = './paper_plots/low_dl_low_fr' # low_dl_low_fr
+
+freqs=freqs[:Nfreqs]
+
+print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
+fourier_op = hp.utils.fourier_operator(Nfreqs, unitary=True)
+ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., Nfreqs)))
+S_true = hp.pspec.covariance_from_pspec(ps_true, fourier_op)
+
+print("Shape of ps_true: {}, shape of S_true: {}".format(ps_true.shape,S_true.shape))
+# Build systematics model
+# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
+nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
+# nm_list = [(3,3),(4,3),(5,3),(6,3)] #low dl low fr
+
+''' Loading and making the data '''
+# Generate FG mode matrix
+fgmodes = np.array([
+                scipy.special.legendre(i)(np.linspace(-1., 1., freqs.size))
+                for i in range(Nfgmodes)
+            ]).T
+
+print("Shape of fgmodes: ",fgmodes.shape)
+
+sqrt_S_true = np.linalg.cholesky(S_true)
+eor_true = (sqrt_S_true @ (np.random.randn(Nfreqs,Ntimes) 
+                          + 1.j*np.random.randn(Nfreqs,Ntimes)) / np.sqrt(2.)).T
+# Note factor of sqrt(2) above
+print("Eor_true shape: {}".format(eor_true.shape))
+# Check that generated EoR field has a similar power spectrum to the true one
+ps_check = calc_ps(eor_true)
+np.save(op_dir+'/eor_true.npy',eor_true)
+'''Loading from npy'''
+vis_fg_path = 'npy_data/fg_true.npy'
+fg_true = np.load(vis_fg_path)
+
+fg_true=fg_true[:Ntimes,:Nfreqs]
+
+
+ps_true_vis=calc_ps(eor_true)
+
+# Define power spectrum prior range and draw sample of PS from EoR field
+ps_prior = np.column_stack( (1e-7 * np.ones(Nfreqs),
+                            1e-1 * np.ones(Nfreqs)) )
+ps_sample = hp.pspec.sample_pspec(s=eor_true, prior=ps_prior)
+
+print("Shape of ps_sample: {}".format(ps_sample.shape))
+# No need for factor of 1/Nfreqs**2 here as sample_S() changed to iFFT normalization
+S_sample = hp.pspec.covariance_from_pspec(ps_sample, fourier_op)
+Sinv_sample = hp.pspec.covariance_from_pspec(1. / ps_sample, fourier_op)
+
+# Generate noise
+noise_ps_val = 0.0004 #0.000004 #0.000004 # 0.0004
+noise_ps_true = noise_ps_val * np.ones(Nfreqs)
+N_true = hp.pspec.covariance_from_pspec(noise_ps_true, fourier_op)
+Ninv = np.diag(1./np.diag(N_true)) # get diagonal, invert, pack back into diagonal
+n = np.sqrt(N_true) @ (np.random.randn(freqs.size, Ntimes) 
+                    + 1.j*np.random.randn(freqs.size, Ntimes)) / np.sqrt(2.)
+# Note factor of sqrt(2) above
+noise_ps_check = calc_ps(n.T)
+
+
+print("NM list: ",nm_list)
+lsts = np.linspace(0., 1., Ntimes)
+sys_modes_operator = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6, 
+                                    times_sec=lsts * 24./(2.*np.pi) * 3600., 
+                                    modes=nm_list)
+
+sys_amps_true = np.array([4., 4.1, 5., -2.]) #np.array([4., 4.01])
+sys_prior = 4**2. * np.eye(sys_amps_true.size)
+
+gain_true = (1. + sys_modes_operator @ sys_amps_true).reshape((Nfreqs, Ntimes))
+np.save(op_dir+'/gain_true.npy',gain_true)
+
+# Combine together into data
+d = gain_true.T * (fg_true + eor_true) + n.T
+
+# FIXME: Units or normalisation issue with ps_prior?
+ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
+                            1e-1 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
+
+flags_i = np.ones((len(freqs),), dtype=int)
+
+print("Shapes of sys modes, sys priors, and sys initial: ",sys_modes_operator.shape,sys_prior.shape,sys_amps_true.shape)
+'''-------------------------------------------------------------------------------------------------------'''
+
+print("Prior min: {}\n Prior Max: {} ".format(ps_prior.min(),ps_prior.max()))
+print("PS true min: {}\n, Ps true max: {}".format(ps_true.min(),ps_true.max()))
 # pr.enable()
 # Run Gibbs sampler
-signal_cr, signal_S, signal_ps, fg_amps, b_sys, chisq, ln_post = \
-        hp.pspec.gibbs_sample_with_fg(
-            d,
-            w[0],  # FIXME: add functionality for time-dependent flags
-            S_initial,
-            fgmodes,
-            Ninv,
-            ps_prior,
-            Niter=args.Niter,
-            seed=args.seed,
-            map_estimate=args.map_estimate,
-            verbose=verbose,
-            nproc=args.Nproc,
-            write_Niter=args.write_Niter,
-            out_dir=out_dir,
-            freqs=freqs_for_op,
-            lsts=lsts,
-            nm_list=nm_list, #FIXME: load nm_list from file/function
-        )
+signal_cr, signal_ps, fg_amps, b_sys, chisq, ln_post = \
+        hp.pspec.gibbs_sample(vis=d,
+                            flags=flags_i,  # w[0], FIXME: add functionality for time-dependent flags
+                            Ninv=Ninv,
+                            signal_ps_initial=ps_true,
+                            signal_ps_prior=ps_prior,
+                            fg_modes=fgmodes,
+                            sys_modes=sys_modes_operator,
+                            sys_prior=sys_prior, #FIXME: find a better way to define this
+                            sys_initial=sys_amps_true,
+                            Niter=1000,  #FIXME: args.Niter isn't working at the moment
+                            seed=args.seed,
+                            freqs=freqs,
+                            lsts=np.linspace(0., 1., Ntimes),
+                            sample_systematics=True,
+                            sample_eor_fg=True,
+                            sample_signal_ps=True,
+                            sky_model_initial=None,
+                            solver_tol=1e-13,
+                            verbose=verbose,
+                            out_dir=op_dir,
+                            nproc=args.Nproc,
+                            write_Niter=args.write_Niter,
+                            map_estimate=False)
 
 # pr.disable()
 
