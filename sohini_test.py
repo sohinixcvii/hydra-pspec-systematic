@@ -12,8 +12,21 @@ import time
 
 start_t= time.time()
 
+'''-------------------------------------------Parameters & seed-----------------------------------'''
+Ntimes = 80 #60 #203
+Nfreqs = 60
+freqs = np.linspace(100., 120., 120) ##120) 
+freqs=freqs[:Nfreqs]
+Nfgmodes = 10
+Niter=100
 np.random.seed(11)
+lsts = np.linspace(0., 1., Ntimes)
+flags_i = np.ones((len(freqs),), dtype=int)
 
+print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
+'''-----------------------------------------------------------------------------------------------'''
+
+'''------------------------------------Functions-----------------------'''
 # Check power spectrum
 def calc_ps(s):
     # NOTE: This uses inverse FFT instead of FFT to get the right normalisation
@@ -24,53 +37,60 @@ def calc_ps(s):
     Nobs, Nfreqs = sk.shape
     return np.mean(sk * sk.conj(), axis=0).real / Nfreqs # CHECK: This takes an average
 
-Ntimes = 80 #60 #203
-Nfreqs = 60
-freqs = np.linspace(100., 120., 120) ##120) 
-Nfgmodes = 10
-Niter=10000
+'''---------------------------------------------------------------------'''
 
-# op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0
-op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0
-# op_dir = './paper_plots/low_dl_low_fr' # low_dl_low_fr
+'''-----------------------------Set up output directory and systematics model-------------------------'''
+'''10k runs'''
+# op_dir = './paper_plots/low_dl_fr_0' # low_dl_fr_0 - Case I
+# op_dir = './paper_plots/high_dl_fr_0' # high_dl_fr_0 - Case II
+# op_dir = './paper_plots/low_dl_fr_20' # low_dl_fr_20 - Case III
 
-# op_dir = './paper_plots/low_dl_fr_20' # low_dl_fr_20
-# op_dir = './paper_plots/high_dl_fr_20' # high_dl_fr_20
-# op_dir = './paper_plots/low_dl_high_fr' # low_dl_high_fr
-# op_dir = './paper_plots/alt_bsys'
-
-# op_dir = './paper_plots/1e7_bound/10modes'
-# op_dir = './paper_plots/1e7_bound/10modes_fg_fit_2k'
-# op_dir = './paper_plots/1e7_bound/11modes'
-# op_dir = './paper_plots/1e7_bound/12modes'
+'''100k runs'''
+op_dir = './paper_plots/100k_runs/low_dl_fr_0' # low_dl_fr_0 - Case I
+# op_dir = './paper_plots/100k_runs/high_dl_fr_0' # high_dl_fr_0 - Case II
+# op_dir = './paper_plots/100k_runs/low_dl_fr_20' # low_dl_fr_20 - Case III
 
 # Build systematics model
-# nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0
-nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0
+nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0 - Case I
+# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0 - Case II
+# nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20 - Case III
 
-# nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20
-# nm_list = [(10,20), (11,20), (12,20), (13,20)] #high dl fr 20
-# nm_list = [(3,23),(3,24),(3,25),(3,26)] #low dl high fr
+print("NM list: ",nm_list)
 
-freqs=freqs[:Nfreqs]
+sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6, 
+                                    times_sec=lsts * 24./(2.*np.pi) * 3600., 
+                                    modes=nm_list)
 
-print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
+sys_amps_true = np.array([1. + 4j, 2 + 3j, 3. + 2j, 4. + 1j]) #np.array([4., 4.01])
+# sys_amps_true = np.array([0.001, 0.001, 0.001, 0.001]) #np.array([4., 4.01])
+sys_prior = 100**2. * np.eye(sys_amps_true.size)
+
+gain_true = (1. + (sys_modes @ sys_amps_true).reshape([Nfreqs,Ntimes]).T)
+np.save(op_dir+'/gain_true.npy',gain_true)
+'''-----------------------------------------------------------------------------------------------------'''
+
+'''--------------------------------------EoR field and power spectrum-----------------------------'''
 fourier_op = hp.utils.fourier_operator(Nfreqs, unitary=True)
 ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., Nfreqs)))
 S_true = hp.pspec.covariance_from_pspec(ps_true, fourier_op)
 
 print("Shape of ps_true: {}, shape of S_true: {}".format(ps_true.shape,S_true.shape))
 
+# Generate EoR field from this
+# S_true = np.load('test_data/eor-cov.npy')
+sqrt_S_true = np.linalg.cholesky(S_true)
+eor_true = (sqrt_S_true @ (np.random.randn(Nfreqs,Ntimes) 
+                          + 1.j*np.random.randn(Nfreqs,Ntimes)) / np.sqrt(2.)).T
+# Note factor of sqrt(2) above
+print("Eor_true shape: {}".format(eor_true.shape))
+# Check that generated EoR field has a similar power spectrum to the true one
+ps_check = calc_ps(eor_true)
+np.save(op_dir+'/eor_true.npy',eor_true)
+'''---------------------------------------------------------------------------------------------'''
 
-''' Loading and making the data '''
-# Generate FG mode matrix
-fgmodes = np.array([
-                scipy.special.legendre(i)(np.linspace(-1., 1., freqs.size))
-                for i in range(Nfgmodes)
-            ]).T
 
-print("Shape of fgmodes: ",fgmodes.shape)
 
+'''-------------------------------------Foregrounds----------------------------------'''
 '''Loading from uvh5'''
 # uvd = UVData()
 # vis_fg_path='/Users/user/Documents/Codes/hydra_sys_project1/hydra-pspec-systematic-multiplicative/test_data/vis-ptsrc-gsm.uvh5' #Sohini's laptop
@@ -87,26 +107,42 @@ print("Shape of fgmodes: ",fgmodes.shape)
 # eor_true = uvd.get_data((0, 1, "xx"))  # shape (Ntimes, Nfreqs)
 # np.save('npy_data/eor_true',eor_true)
 
-
-# Generate EoR field from this
-# S_true = np.load('test_data/eor-cov.npy')
-sqrt_S_true = np.linalg.cholesky(S_true)
-eor_true = (sqrt_S_true @ (np.random.randn(Nfreqs,Ntimes) 
-                          + 1.j*np.random.randn(Nfreqs,Ntimes)) / np.sqrt(2.)).T
-# Note factor of sqrt(2) above
-print("Eor_true shape: {}".format(eor_true.shape))
-# Check that generated EoR field has a similar power spectrum to the true one
-ps_check = calc_ps(eor_true)
-np.save(op_dir+'/eor_true.npy',eor_true)
 '''Loading from npy'''
-vis_fg_path = 'npy_data/fg_true.npy'
-fg_true = np.load(vis_fg_path)
-
 # vis_eor_path = 'npy_data/eor_true.npy'
 # eor_true=np.load(vis_eor_path)
 
+vis_fg_path = 'npy_data/fg_true.npy'
+fg_true = np.load(vis_fg_path)
+
+# Generate FG mode matrix
+fgmodes = np.array([
+                scipy.special.legendre(i)(np.linspace(-1., 1., freqs.size))
+                for i in range(Nfgmodes)
+            ]).T
+
+print("Shape of fgmodes: ",fgmodes.shape)
+
+
+
 fg_true=fg_true[:Ntimes,:Nfreqs]
 np.save(op_dir+'/fg_true.npy',fg_true)
+
+# '''------------Creating dummy foregrounds-------------------'''
+# A = fgmodes[:, :Nfgmodes]   # (60, 10)
+# B = fg_true.T               # (60, 80)
+
+# # Works for real or complex
+# X_hat, *_ = np.linalg.lstsq(A, B, rcond=None)  # X_hat: (10, 80)
+# fg_amps_fit = X_hat
+# fg_fit = (fgmodes @ fg_amps_fit).T
+# np.save(op_dir+'/fg_true_fit.npy',fg_fit)
+# np.save(op_dir+'/fgmodes.npy',fgmodes)
+# '''-----------------------------------------------------------'''
+
+'''-----------------------------------------------------------------------------------------'''
+
+
+'''-----------------------------Priors-----------------------------'''
 # Set power spectrum
 
 # eor_true=eor_true[:Ntimes,:Nfreqs]
@@ -119,10 +155,13 @@ ps_prior = np.column_stack( (1e-7 * np.ones(Nfreqs),
 ps_sample = hp.pspec.sample_pspec(s=eor_true, prior=ps_prior)
 
 print("Shape of ps_sample: {}".format(ps_sample.shape))
+
 # No need for factor of 1/Nfreqs**2 here as sample_S() changed to iFFT normalization
 S_sample = hp.pspec.covariance_from_pspec(ps_sample, fourier_op)
 Sinv_sample = hp.pspec.covariance_from_pspec(1. / ps_sample, fourier_op)
+'''----------------------------------------------------------------------------'''
 
+'''-----------------------------Noise-----------------------------'''
 # Generate noise
 noise_ps_val = 0.0004 #0.000004 #0.000004 # 0.0004 -- usual case
 noise_ps_true = noise_ps_val * np.ones(Nfreqs)
@@ -132,45 +171,16 @@ n = np.sqrt(N_true) @ (np.random.randn(freqs.size, Ntimes)
                     + 1.j*np.random.randn(freqs.size, Ntimes)) / np.sqrt(2.)
 # Note factor of sqrt(2) above
 noise_ps_check = calc_ps(n.T)
+'''-----------------------------------------------------------------------------------------'''
 
-
-print("NM list: ",nm_list)
-lsts = np.linspace(0., 1., Ntimes)
-sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6, 
-                                    times_sec=lsts * 24./(2.*np.pi) * 3600., 
-                                    modes=nm_list)
-
-sys_amps_true = np.array([1. + 4j, 2 + 3j, 3. + 2j, 4. + 1j]) #np.array([4., 4.01])
-# sys_amps_true = np.array([0.001, 0.001, 0.001, 0.001]) #np.array([4., 4.01])
-sys_prior = 100**2. * np.eye(sys_amps_true.size)
-
-gain_true = (1. + (sys_modes @ sys_amps_true).reshape([Nfreqs,Ntimes]).T)
-np.save(op_dir+'/gain_true.npy',gain_true)
-
-
-'''------------Creating dummy foregrounds-------------------'''
-A = fgmodes[:, :Nfgmodes]   # (60, 10)
-B = fg_true.T               # (60, 80)
-
-# Works for real or complex
-X_hat, *_ = np.linalg.lstsq(A, B, rcond=None)  # X_hat: (10, 80)
-fg_amps_fit = X_hat
-fg_fit = (fgmodes @ fg_amps_fit).T
-np.save(op_dir+'/fg_true_fit.npy',fg_fit)
-np.save(op_dir+'/fgmodes.npy',fgmodes)
-
-'''-----------------------------------------------------------'''
+'''-----------------------------Combine to get data-----------------------------'''
 # Combine together into data
 d = gain_true * (fg_true + eor_true) + n.T #Simulated FG
-# d = gain_true * (fg_fit + eor_true) + n.T
 np.save(op_dir+'/data_true.npy',d)
-# FIXME: Units or normalisation issue with ps_prior?
-ps_prior = np.column_stack( (1e-7 * np.ones(freqs.size),
-                            1e-1 * np.ones(freqs.size)) ).T # should have shape (2, Nfreqs)
+'''-----------------------------------------------------------------------------------------'''
 
-flags_i = np.ones((len(freqs),), dtype=int)
 
-""" Running the sampler """
+'''-----------------------------Running the sampler------------------------------'''
 
 signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
         hp.pspec.gibbs_sample(
@@ -179,7 +189,7 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
             signal_ps_initial=ps_true,
             fg_modes=fgmodes,
             Ninv=Ninv,
-            signal_ps_prior=ps_prior,
+            signal_ps_prior=ps_prior.T, #Should be (2, Nfreqs)
             Niter=Niter,
             seed=10,
             freqs=freqs,
@@ -201,5 +211,6 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = \
 
 
 end_t = time.time()
+'''-----------------------------------------------------------------------------------------'''
 
 print("Total time taken: {}".format(end_t-start_t))
