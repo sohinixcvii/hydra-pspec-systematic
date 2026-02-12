@@ -111,7 +111,7 @@ np.save(op_dir+'/eor_true.npy',eor_true)
 # vis_eor_path = 'npy_data/eor_true.npy'
 # eor_true=np.load(vis_eor_path)
 
-vis_fg_path = 'npy_data/fg_true.npy'
+vis_fg_path = 'res/npy_data/fg_true.npy'
 fg_true = np.load(vis_fg_path)
 
 # Generate FG mode matrix
@@ -121,7 +121,6 @@ fgmodes = np.array([
             ]).T
 
 print("Shape of fgmodes: ",fgmodes.shape)
-
 
 
 fg_true=fg_true[:Ntimes,:Nfreqs]
