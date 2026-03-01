@@ -52,8 +52,9 @@ def calc_ps(s):
 
 '''100k runs'''
 # op_dir = './paper_plots/100k_runs/low_dl_fr_0' # low_dl_fr_0 - Case I
-op_dir = './paper_plots/100k_runs/high_dl_fr_0' # high_dl_fr_0 - Case II
+# op_dir = './paper_plots/100k_runs/high_dl_fr_0' # high_dl_fr_0 - Case II
 # op_dir = './paper_plots/100k_runs/low_dl_fr_20' # low_dl_fr_20 - Case III
+op_dir = './paper_plots/100k_runs/high_dl_high_fr' # high_dl_high_fr - Case IV
 
 '''Using simulated data from Burba'''
 # op_dir = './paper_plots/sim_data/low_dl_fr_0' # low_dl_fr_0 - Case I
@@ -62,8 +63,9 @@ op_dir = './paper_plots/sim_data/high_dl_fr_0' # high_dl_fr_0 - Case II
 
 # Build systematics model
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0 - Case I
-nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0 - Case II
+# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0 - Case II
 # nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20 - Case III
+nm_list = [(20,20),(21,20),(22,21),(23,21)] #high dl high 20fr - Case IV
 
 print("NM list: ",nm_list)
 
@@ -141,7 +143,6 @@ fgmodes = np.array([
 
 print("Shape of fgmodes: ",fgmodes.shape)
 np.save(op_dir+'/fgmodes.npy',fgmodes)
-exit()
 
 fg_true=fg_true[:Ntimes,:Nfreqs]
 np.save(op_dir+'/fg_true.npy',fg_true)
