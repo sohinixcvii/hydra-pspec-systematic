@@ -27,7 +27,7 @@ Niter=100000
 np.random.seed(11)
 lsts = np.linspace(0., 1., Ntimes)
 flags_i = np.ones((len(freqs),), dtype=int)
-
+dummy_flag = True # True to have gaussian random samples form the EoR. False to use Burba eor.
 print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
 '''-----------------------------------------------------------------------------------------------'''
 
@@ -55,6 +55,11 @@ def calc_ps(s):
 op_dir = './paper_plots/100k_runs/high_dl_fr_0' # high_dl_fr_0 - Case II
 # op_dir = './paper_plots/100k_runs/low_dl_fr_20' # low_dl_fr_20 - Case III
 
+'''Using simulated data from Burba'''
+# op_dir = './paper_plots/sim_data/low_dl_fr_0' # low_dl_fr_0 - Case I
+op_dir = './paper_plots/sim_data/high_dl_fr_0' # high_dl_fr_0 - Case II
+# op_dir = './paper_plots/sim_data/low_dl_fr_20' # low_dl_fr_20 - Case III
+
 # Build systematics model
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0 - Case I
 nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0 - Case II
@@ -75,22 +80,31 @@ np.save(op_dir+'/gain_true.npy',gain_true)
 '''-----------------------------------------------------------------------------------------------------'''
 
 '''--------------------------------------EoR field and power spectrum-----------------------------'''
-fourier_op = hp.utils.fourier_operator(Nfreqs, unitary=True)
-ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., Nfreqs)))
-S_true = hp.pspec.covariance_from_pspec(ps_true, fourier_op)
 
-print("Shape of ps_true: {}, shape of S_true: {}".format(ps_true.shape,S_true.shape))
+if dummy_flag==True:
+    fourier_op = hp.utils.fourier_operator(Nfreqs, unitary=True)
+    ps_true = 0.0012 * (1. + 0.3*np.sin(3. * np.linspace(0., 1., Nfreqs)))
+    S_true = hp.pspec.covariance_from_pspec(ps_true, fourier_op)
 
-# Generate EoR field from this
-# S_true = np.load('test_data/eor-cov.npy')
-sqrt_S_true = np.linalg.cholesky(S_true)
-eor_true = (sqrt_S_true @ (np.random.randn(Nfreqs,Ntimes) 
-                          + 1.j*np.random.randn(Nfreqs,Ntimes)) / np.sqrt(2.)).T
-# Note factor of sqrt(2) above
-print("Eor_true shape: {}".format(eor_true.shape))
-# Check that generated EoR field has a similar power spectrum to the true one
-ps_check = calc_ps(eor_true)
-np.save(op_dir+'/eor_true.npy',eor_true)
+    print("Shape of ps_true: {}, shape of S_true: {}".format(ps_true.shape,S_true.shape))
+
+    # Generate EoR field from this
+    # S_true = np.load('test_data/eor-cov.npy')
+    sqrt_S_true = np.linalg.cholesky(S_true)
+    eor_true = (sqrt_S_true @ (np.random.randn(Nfreqs,Ntimes) 
+                            + 1.j*np.random.randn(Nfreqs,Ntimes)) / np.sqrt(2.)).T
+    # Note factor of sqrt(2) above
+    print("Eor_true shape: {}".format(eor_true.shape))
+    # Check that generated EoR field has a similar power spectrum to the true one
+    ps_check = calc_ps(eor_true)
+    np.save(op_dir+'/eor_true.npy',eor_true)
+else:
+    eor_true = np.load('res/npy_data/eor_true.npy')
+    S_true = np.load('res/test_data/eor-cov.npy')
+    
+    eor_true = eor_true[:Ntimes,:Nfreqs]
+    ps_true = calc_ps(eor_true)
+    np.save(op_dir+'/eor_true.npy',eor_true)
 '''---------------------------------------------------------------------------------------------'''
 
 
