@@ -315,7 +315,6 @@ def gcr_fg_and_signal_per_time(idx,
     
     # A_22: G^dagger * g^dagger * N^-1 * g * G 
     A[Nfreqs:, Nfreqs:] = fg_modes.T.conj() @ (Ni_flagged[:,np.newaxis] * fg_modes)
-    
     # Basic diagonal preconditioner
     Ainv_estimate = np.diag(1. / np.diag(A))
     #Ainv_estimate = np.linalg.pinv(A)

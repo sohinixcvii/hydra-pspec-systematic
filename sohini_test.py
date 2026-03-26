@@ -18,12 +18,12 @@ with open('res/hydra_ascii.txt', 'r') as f:
 '''-----------------------------------------------------------------------------------'''
 
 '''-------------------------------------------Parameters & seed-----------------------------------'''
-Ntimes = 80 #60 #203
-Nfreqs = 60
+Ntimes = 203 #60 #203
+Nfreqs = 120
 freqs = np.linspace(100., 120., 120) ##120) 
 freqs=freqs[:Nfreqs]
 Nfgmodes = 10
-Niter=100000
+Niter=10000
 np.random.seed(11)
 lsts = np.linspace(0., 1., Ntimes)
 flags_i = np.ones((len(freqs),), dtype=int)
@@ -54,12 +54,13 @@ def calc_ps(s):
 # op_dir = './paper_plots/100k_runs/low_dl_fr_0' # low_dl_fr_0 - Case I
 # op_dir = './paper_plots/100k_runs/high_dl_fr_0' # high_dl_fr_0 - Case II
 # op_dir = './paper_plots/100k_runs/low_dl_fr_20' # low_dl_fr_20 - Case III
-op_dir = './paper_plots/100k_runs/high_dl_high_fr' # high_dl_high_fr - Case IV
+# op_dir = './paper_plots/100k_runs/high_dl_high_fr' # high_dl_high_fr - Case IV
 
 '''Using simulated data from Burba'''
 # op_dir = './paper_plots/sim_data/low_dl_fr_0' # low_dl_fr_0 - Case I
-op_dir = './paper_plots/sim_data/high_dl_fr_0' # high_dl_fr_0 - Case II
+# op_dir = './paper_plots/sim_data/high_dl_fr_0' # high_dl_fr_0 - Case II
 # op_dir = './paper_plots/sim_data/low_dl_fr_20' # low_dl_fr_20 - Case III
+op_dir = './paper_plots/sim_data/full_data_high_dl_fr_0' # high_dl_fr_0 - Case II
 
 # Build systematics model
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0 - Case I
@@ -104,6 +105,8 @@ else:
     eor_true = np.load('res/npy_data/eor_true.npy')
     S_true = np.load('res/test_data/eor-cov.npy')
     
+    lsts = np.load('res/npy_data/lsts_full.npy')[:Ntimes]
+    freqs = np.load('res/npy_data/freqs_full.npy')[:Nfreqs] * 10e-6
     eor_true = eor_true[:Ntimes,:Nfreqs]
     ps_true = calc_ps(eor_true)
     np.save(op_dir+'/eor_true.npy',eor_true)
