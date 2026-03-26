@@ -132,9 +132,6 @@ else:
 # np.save('npy_data/eor_true',eor_true)
 
 '''Loading from npy'''
-# vis_eor_path = 'npy_data/eor_true.npy'
-# eor_true=np.load(vis_eor_path)
-
 vis_fg_path = 'res/npy_data/fg_true.npy'
 fg_true = np.load(vis_fg_path)
 
