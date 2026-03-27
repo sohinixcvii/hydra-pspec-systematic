@@ -1,36 +1,15 @@
 # Changelog
 
 ---
+## 2026-03-26 — Second version of HERA test notebook
+ 
+**Added**
+
+- Added new cable reflection notebook in tools/hera_val/
+- New notebook loads npy data, creates sky visibilities by doing eor+fg and returns reflection systematics at +/- 1200ns
+- Notebooks also plots DL-FR plot for paper
 
 ## 2026-03-26 — HERA validation notebook refactor
-
-### `tools/hera_val/test-3.2.0.ipynb` (rewrite, 68 → 16 cells)
-
-**Decluttered**
-- Removed abstract, description, summary, and software-version markdown sections.
-- Removed hardcoded server paths (`/nvme2/scratch/sohini/...`, `/users/heramgr/...`).
-- Removed `sim_prep` import and its `sys.path.append` hack.
-- Removed `UVData`/`pyuvdata`/`h5py`/`hera_pspec`/`yaml` imports.
-- Removed EW baseline selection cells — data is already a pre-extracted single-baseline 2D array.
-- Removed broken `{{print(datetime.now())}}` template cell.
-- Removed `type()`/`pwd`/empty debug cells.
-- Removed Gaussian mask generation and paper-plotting cells.
-- Removed all uvh5 file-save cells and `nm_list` scratch/debug cells (cells 45–67).
-
-**Changed to `.npy` file system**
-- Data loaded from `res/hera_val_npy/` via `numpy.load`; no UVData/pyuvdata file I/O.
-- Added LST → fake-JD time conversion cell for correct fringe-rate axis in `plot_waterfalls`.
-
-**Bug fixes in `plot_waterfalls`**
-- `limit_drng == 'all'` was mutated inside the per-panel loop, causing incorrect
-  dynamic-range clipping from the second panel onward. Fixed by computing
-  `clip_drng` as a single boolean expression outside the mutation path.
-
-**Added**
-- Third plot panel: **Systematics = Corrupted − Clean** diagnostic waterfall.
-- `wfall_kw` dict for DRY waterfall calls across all three figures.
-
----
 
 ## 2026-03 — `sohini_test.py` cleanup
 

@@ -39,8 +39,10 @@ hydra_copy/
 ├── tools/
 │   ├── hera_val/
 │   │   ├── sim_prep.py              # hera_sim integration — add crosstalk/reflections/noise
+│   │   ├── sim_prep_old.py              # older version of sim_prep.py
 │   │   ├── sim_config.yaml          # Systematics injection parameters
 │   │   ├── test-3.2.0.ipynb         # HERA validation notebook (loads from res/hera_val_npy/)
+│   │   ├── test_2.ipynb         # Takes npy visibilities and injects uncertainties into it. 
 │   │   ├── Sys_Gen.ipynb            # Systematics generation notebook
 │   │   ├── RIMEz_beam_poly.npy      # RIMEz beam polynomial for noise modelling
 │   │   └── nm_list.npz              # Pre-computed systematic mode indices

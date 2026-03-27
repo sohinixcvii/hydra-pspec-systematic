@@ -481,26 +481,16 @@ def apply_gains(sim, gains, time_vary_params=None):
     """Apply per-antenna gains to a simulation."""
     # Support gain variation in time.
     times = np.unique(sim.time_array)
-    for antpairpol in sim.get_antpairpols():
-        blt_inds, _, pol_inds = sim._key2inds(antpairpol)
-        vis = sim.get_data(antpairpol)
-        print(f"{antpairpol}: blt_inds={len(blt_inds)}, vis={vis.shape}, pol_inds={pol_inds}")
-        break  # just check first one
     time_vary_params = time_vary_params or {}
     for mode, vary_params in time_vary_params.items():
         gains = vary_gains_in_time(gains, times, mode, **vary_params)
     for antpairpol in sim.get_antpairpols():
         blt_inds, _, pol_inds = sim._key2inds(antpairpol)
+        this_slice = (blt_inds, slice(None), pol_inds[0])
         vis = sim.get_data(antpairpol)
-        corrupted = hera_sim.sigchain.apply_gains(vis, gains, antpairpol[:2])
-        if sim.data_array.ndim == 4:
-            # pyuvdata 2.x: (Nblts, 1, Nfreqs, Npols)
-            this_slice = (blt_inds, slice(None), slice(None), pol_inds[0])
-            sim.data_array[this_slice] = corrupted[:, np.newaxis, :]
-        else:
-            # pyuvdata 3.x: (Nblts, Nfreqs, Npols)
-            this_slice = (blt_inds, slice(None), pol_inds[0])
-            sim.data_array[this_slice] = corrupted[:, :, np.newaxis]
+        sim.data_array[this_slice] = hera_sim.sigchain.apply_gains(
+            vis, gains, antpairpol[:2]
+        )[:,:,np.newaxis]
         del vis
     return
 
@@ -632,36 +622,139 @@ SYSTEMATICS_SIMULATORS = {
     'xtalk' : add_xtalk
 }
 
-import types
-import numpy as np
-import time
+# def apply_systematics(
+#     sim, 
+#     seed=None,
+#     noise=None, 
+#     gains=None, 
+#     reflection_spectrum=None,
+#     reflections=None,
+#     xtalk=None,
+#     return_systematics=False,
+#     verbose=False
+# ):
+#     """One-stop shop for applying systematics to a simulation.
 
-def _sim_to_array_container(sim):
-    """
-    Normalise `sim` into a SimpleNamespace with a .data_array attribute,
-    accepting:
-      - a raw np.ndarray  (treated directly as data_array)
-      - a dict            (must contain key 'data_array')
-      - a SimpleNamespace / UVData (passed through unchanged)
-    """
-    if isinstance(sim, np.ndarray):
-        return types.SimpleNamespace(data_array=sim)
-    elif isinstance(sim, dict):
-        if "data_array" not in sim:
-            raise KeyError("sim dict must contain 'data_array'.")
-        ns = types.SimpleNamespace(**sim)   # all keys become attributes
-        return ns
-    elif hasattr(sim, "data_array"):        # UVData or existing SimpleNamespace
-        return sim
-    else:
-        raise TypeError(f"Unsupported sim type: {type(sim)}")
+#     This function handles the application of a handful of systematic 
+#     effects, provided appropriate parameters for simulating the 
+#     desired set of systematics. For more information on how the 
+#     systematics are simulated, please see the lower-level ``add_x`` 
+#     functions and their documentation.
+
+#     Parameters
+#     ----------
+#     sim : :class:`pyuvdata.UVData`
+#         Simulation object containing simulation data/metadata. May be 
+#         a subclass thereof, or something that may be converted to a 
+#         :class:`pyuvdata.UVData` object (such as a path to a file).
+#     seed : {int, None, or 'random'}, optional
+#         The random seed. If None, then this parameter is ignored. If 
+#         'random', then a seed is generated from the system time. See 
+#         :func:`_gen_seed` for details. Default is to not use a seed. 
+#         If this is specified, then it is used as the default seed for 
+#         any systematics that do not have their `seed` parameter defined. 
+#     noise : dict, optional
+#         Dictionary of parameters for simulating noise. See :func:`add_noise` 
+#         for further information. Default is to not simulate noise.
+#     gains : dict, optional
+#         Dictionary of parameters for simulating bandpass gains. See 
+#         :func:`add_gains` for further information. Default is to not 
+#         simulate bandpass gains.
+#     reflections : dict, optional
+#         Dictionary of parameters for simulating cable reflections. See 
+#         :func:`add_reflections` for further information. Default is to 
+#         not simulate cable reflections.
+#     xtalk : dict, optional
+#         Dictionary of parameters for simulating cross-coupling crosstalk. 
+#         See :func:`add_xtalk` for further information. Default is to not 
+#         simulate crosstalk.
+#     return_systematics : bool, optional
+#         Whether to return the simulated systematics. If True, then 
+#         systematics are returned as a dictionary, with the names of the 
+#         systematics as the keys. The values are either data arrays (in the 
+#         format of :class:`pyuvdata.UVData` data arrays) or dictionaries 
+#         mapping antennas to gains, depending on the systematic. (Noise 
+#         and crosstalk are visibility-like, so they are returned as data 
+#         arrays; reflections and bandpass gains are per-antenna quantities, 
+#         which are optionally time-dependent, and so are returned as mappings 
+#         from antenna numbers to gains.) Default is to not return systematics. 
+#         !! WARNING !! If you are simulating effects for large data arrays, 
+#         then enabling this feature may potentially result in a memory 
+#         overflow!
+#     verbose : bool, optional
+#         Whether to print statements tracking the progress of the systematics 
+#         simulation and application. Primarily used for debugging. Default 
+#         is to not print updates.
+
+#     Returns
+#     -------
+#     corrupted_sim : :class:`pyuvdata.UVData`
+#         Simulation with systematics applied.
+#     systematics : dict
+#         Dictionary mapping systematics to their data arrays or gain 
+#         dictionaries. None is returned if ``return_systematics`` is False.
+#     parameters : dict
+#         Dictionary mapping systematic names to simulation parameters 
+#         required to reconstruct the simulated systematic effects.
+#     """
+#     if verbose:
+#         print("Extracting systematics parameters...\n")
+
+#     # Collect all of the parameters into a dictionary.
+#     parameters = {
+#         'noise' : noise,
+#         'gains' : gains,
+#         'reflection_spectrum': reflection_spectrum,
+#         'reflections' : reflections,
+#         'xtalk' : xtalk
+#     }
+  
+#     # Update random seeds in case user wants to "randomly" generate seeds.
+#     for params in parameters.values():
+#         if params is not None:
+#             params['seed'] = _gen_seed(params.get('seed', seed))
+
+#     # Apply the systematics and track the results.
+#     # Simulating this and keeping all the systematics may be very 
+#     # memory-intensive, so sometimes we might not want to keep 
+#     # track of the intermediate products.
+#     systematics = {} if return_systematics else None
+#     sim = _sim_to_uvd(sim)
+#     for systematic, params in parameters.items():
+#         if params is None:
+#             continue
+#         if verbose:
+#             print(f"Simulating {systematic}:")
+#             print(f"-----------"+"-"*len(systematic))
+#             print(f"Params:")
+#             for param, value in params.items():
+#                 print(f"\t{param} : {value}")
+#             print("Min/Mean/Max before: ", np.min(sim.data_array),
+#                   np.mean(sim.data_array), np.max(sim.data_array))
+
+#         # This is a bit of a hack, but I can't think of a better way...
+#         t = time.time()
+#         add_systematic = SYSTEMATICS_SIMULATORS[systematic]
+
+#         if return_systematics:
+#             sim, systematics[systematic] = add_systematic(sim, ret_cmp=True, **params)
+#         else:
+#             sim = add_systematic(sim, ret_cmp=False, **params)
+
+#         if verbose:
+#             print("Min/Mean/Max after: ", np.min(sim.data_array),
+#                   np.mean(sim.data_array), np.max(sim.data_array))
+
+#             print(f"Done in {time.time() - t} sec.")
+#             print()
+#     return sim, systematics, parameters
 
 
 def apply_systematics(
-    sim,
+    sim, 
     seed=None,
-    noise=None,
-    gains=None,
+    noise=None, 
+    gains=None, 
     reflection_spectrum=None,
     reflections=None,
     xtalk=None,
@@ -669,50 +762,40 @@ def apply_systematics(
     verbose=False
 ):
     """One-stop shop for applying systematics to a simulation.
-
-    Parameters
-    ----------
-    sim : np.ndarray, dict, SimpleNamespace, or UVData
-        The visibility data to corrupt.  Accepted forms:
-          - np.ndarray of shape (Nblts, Nfreqs, Npols)
-          - dict with at least {'data_array': np.ndarray, ...}
-          - SimpleNamespace or UVData with a .data_array attribute
     ...
     """
     if verbose:
         print("Extracting systematics parameters...\n")
 
+    # Collect all of the parameters into a dictionary.
     parameters = {
-        'noise':               noise,
-        'gains':               gains,
+        'noise' : noise,
+        'gains' : gains,
         'reflection_spectrum': reflection_spectrum,
-        'reflections':         reflections,
-        'xtalk':               xtalk,
+        'reflections' : reflections,
+        'xtalk' : xtalk
     }
-
+  
+    # Set default seed for any systematic that doesn't have one
+    # But DON'T call _gen_seed here - let each function handle it
     for params in parameters.values():
         if params is not None and 'seed' not in params:
             params['seed'] = seed
 
+    # Apply the systematics and track the results.
     systematics = {} if return_systematics else None
-
-    # Normalise sim — works for ndarray, dict, UVData, or SimpleNamespace
-    sim = _sim_to_array_container(sim)
-
+    sim = _sim_to_uvd(sim)
     for systematic, params in parameters.items():
         if params is None:
             continue
-
         if verbose:
             print(f"Simulating {systematic}:")
-            print(f"-----------" + "-" * len(systematic))
-            print("Params:")
+            print(f"-----------"+"-"*len(systematic))
+            print(f"Params:")
             for param, value in params.items():
                 print(f"\t{param} : {value}")
-            print("Min/Mean/Max before: ",
-                  np.min(sim.data_array),
-                  np.mean(sim.data_array),
-                  np.max(sim.data_array))
+            print("Min/Mean/Max before: ", np.min(sim.data_array),
+                  np.mean(sim.data_array), np.max(sim.data_array))
 
         t = time.time()
         add_systematic = SYSTEMATICS_SIMULATORS[systematic]
@@ -723,14 +806,12 @@ def apply_systematics(
             sim = add_systematic(sim, ret_cmp=False, **params)
 
         if verbose:
-            print("Min/Mean/Max after: ",
-                  np.min(sim.data_array),
-                  np.mean(sim.data_array),
-                  np.max(sim.data_array))
-            print(f"Done in {time.time() - t:.3f} sec.\n")
+            print("Min/Mean/Max after: ", np.min(sim.data_array),
+                  np.mean(sim.data_array), np.max(sim.data_array))
 
+            print(f"Done in {time.time() - t} sec.")
+            print()
     return sim, systematics, parameters
-
 # ------- Functions for preparing files ------- #
 
 def adjust_sim_to_data(sim_file, data_files, verbose=False):
