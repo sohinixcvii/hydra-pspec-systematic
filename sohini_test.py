@@ -76,8 +76,8 @@ sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6,
 
 sys_amps_true = np.array([1. + 4j, 2 + 3j, 3. + 2j, 4. + 1j]) #np.array([4., 4.01])
 # sys_amps_true = np.array([0.001, 0.001, 0.001, 0.001]) #np.array([4., 4.01])
-sys_prior = 100**2. * np.eye(sys_amps_true.size)
-
+# sys_prior = 100**2. * np.eye(sys_amps_true.size)
+sys_prior = sys_amps_true*sys_amps_true.conj() * np.eye(sys_amps_true.size)
 gain_true = (1. + (sys_modes @ sys_amps_true).reshape([Nfreqs,Ntimes]).T)
 np.save(op_dir+'/gain_true.npy',gain_true)
 '''-----------------------------------------------------------------------------------------------------'''
