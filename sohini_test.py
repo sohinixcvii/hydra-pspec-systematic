@@ -18,16 +18,16 @@ with open('res/hydra_ascii.txt', 'r') as f:
 '''-----------------------------------------------------------------------------------'''
 
 '''-------------------------------------------Parameters & seed-----------------------------------'''
-Ntimes = 203 #60 #203
-Nfreqs = 120
+Ntimes = 80 #60 #203
+Nfreqs = 60
 freqs = np.linspace(100., 120., 120) ##120) 
 freqs=freqs[:Nfreqs]
 Nfgmodes = 10
-Niter=10000
+Niter=100000
 np.random.seed(11)
 lsts = np.linspace(0., 1., Ntimes)
 flags_i = np.ones((len(freqs),), dtype=int)
-dummy_flag = True # True to have gaussian random samples form the EoR. False to use Burba eor.
+dummy_flag = False # True to have gaussian random samples form the EoR. False to use Burba eor.
 print("Number of times: {}, Number of freqs: {}, Number of fg modes: {}".format(Ntimes,Nfreqs,Nfgmodes))
 '''-----------------------------------------------------------------------------------------------'''
 
@@ -59,14 +59,14 @@ def calc_ps(s):
 '''Using simulated data from Burba'''
 # op_dir = './paper_plots/sim_data/low_dl_fr_0' # low_dl_fr_0 - Case I
 # op_dir = './paper_plots/sim_data/high_dl_fr_0' # high_dl_fr_0 - Case II
-# op_dir = './paper_plots/sim_data/low_dl_fr_20' # low_dl_fr_20 - Case III
-op_dir = './paper_plots/sim_data/full_data_high_dl_fr_0' # high_dl_fr_0 - Case II
+op_dir = './paper_plots/sim_data/low_dl_fr_20' # low_dl_fr_20 - Case III
+# op_dir = './paper_plots/sim_data/full_data_high_dl_fr_0' # high_dl_fr_0 - Case II
 
 # Build systematics model
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0 - Case I
 # nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0 - Case II
-# nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20 - Case III
-nm_list = [(20,20),(21,20),(22,21),(23,21)] #high dl high 20fr - Case IV
+nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20 - Case III
+# nm_list = [(20,20),(21,20),(22,21),(23,21)] #high dl high 20fr - Case IV
 
 print("NM list: ",nm_list)
 
@@ -175,6 +175,8 @@ ps_prior = np.column_stack( (1e-7 * np.ones(Nfreqs),
 ps_sample = hp.pspec.sample_pspec(s=eor_true, prior=ps_prior)
 
 print("Shape of ps_sample: {}".format(ps_sample.shape))
+
+fourier_op = hp.utils.fourier_operator(Nfreqs, unitary=True)
 
 # No need for factor of 1/Nfreqs**2 here as sample_S() changed to iFFT normalization
 S_sample = hp.pspec.covariance_from_pspec(ps_sample, fourier_op)
