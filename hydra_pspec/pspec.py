@@ -160,9 +160,6 @@ def sample_pspec(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
         sk = np.fft.ifftshift(sk, axes=axes)
     Nobs, Nfreqs = sk.shape
     
-    #prior_min = prior[1,57]
-    #prior_max=prior[0,57]
-    
     alpha = Nobs-1
     beta = np.sum(sk * sk.conj(), axis=0).real # normalisation
 
@@ -170,12 +167,8 @@ def sample_pspec(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
     xgrid = np.logspace(np.log10(prior.min()), np.log10(prior.max()), ngrid) #FIXME: the prior min is 0, can't have that. 
     
     samples = np.zeros(Nfreqs)
-    with open('/nvme2/scratch/sohini/hydra-pspec-systematic/paper_plots/ps_prior_check/beta.txt','a') as fn:
-        np.savetxt(fn,np.array([f"{z.real:.10e}{z.imag:+.10e}j" for z in np.asarray(beta)])[np.newaxis, :],fmt="%s",delimiter=',')
     for i in range(Nfreqs):
         samples[i] = draw_icdf_samples(alpha, beta[i], xgrid)
-    with open('/nvme2/scratch/sohini/hydra-pspec-systematic/paper_plots/ps_prior_check/samples.txt','a') as fn:
-        np.savetxt(fn,np.array([f"{z.real:.10e}{z.imag:+.10e}j" for z in np.asarray(samples)])[np.newaxis, :],delimiter=',',fmt="%s")
     return samples
 
 

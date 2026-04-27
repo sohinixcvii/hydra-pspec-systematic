@@ -58,14 +58,14 @@ def calc_ps(s):
 
 '''Using simulated data from Burba'''
 # op_dir = './paper_plots/sim_data/low_dl_fr_0' # low_dl_fr_0 - Case I
-# op_dir = './paper_plots/sim_data/high_dl_fr_0' # high_dl_fr_0 - Case II
-op_dir = './paper_plots/sim_data/low_dl_fr_20' # low_dl_fr_20 - Case III
+op_dir = './paper_plots/sim_data/high_dl_fr_0' # high_dl_fr_0 - Case II
+# op_dir = './paper_plots/sim_data/low_dl_fr_20' # low_dl_fr_20 - Case III
 # op_dir = './paper_plots/sim_data/full_data_high_dl_fr_0' # high_dl_fr_0 - Case II
 
 # Build systematics model
 # nm_list = [(3,0),(4,0),(5,0),(6,0)] #low dl fr 0 - Case I
-# nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0 - Case II
-nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20 - Case III
+nm_list = [(10,0), (11,0), (12,0), (13,0)] #high dl fr 0 - Case II
+# nm_list = [(3,20),(4,20),(5,20),(6,20)] #low dl fr 20 - Case III
 # nm_list = [(20,20),(21,20),(22,21),(23,21)] #high dl high 20fr - Case IV
 
 print("NM list: ",nm_list)
@@ -76,8 +76,8 @@ sys_modes = hp.sys_solver.sys_modes(freqs_Hz=freqs*1e6,
 
 sys_amps_true = np.array([1. + 4j, 2 + 3j, 3. + 2j, 4. + 1j]) #np.array([4., 4.01])
 # sys_amps_true = np.array([0.001, 0.001, 0.001, 0.001]) #np.array([4., 4.01])
-# sys_prior = 100**2. * np.eye(sys_amps_true.size)
-sys_prior = sys_amps_true*sys_amps_true.conj() * np.eye(sys_amps_true.size)
+sys_prior = 100**2. * np.eye(sys_amps_true.size)
+
 gain_true = (1. + (sys_modes @ sys_amps_true).reshape([Nfreqs,Ntimes]).T)
 np.save(op_dir+'/gain_true.npy',gain_true)
 '''-----------------------------------------------------------------------------------------------------'''
