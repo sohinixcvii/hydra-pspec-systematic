@@ -1,8 +1,65 @@
 # Changelog
 
 ---
+
+## 2026-04 — Script and module cleanup
+
+### `sys_solver.py`
+
+**Added**
+- Module-level docstring listing all public symbols.
+- Full NumPy-style docstrings for every function: `fourier_mode_2d`,
+  `sys_modes`, `gcr_systematics`, `sq_mat_tr`, `sq_mat_tr2`, `inv_mat`,
+  and `cholesky_inverse`.
+- `gcr_systematics`: documented the `Raises` section (both `ValueError`
+  paths for solver failure).
+
+**Removed**
+- Unused imports: `matplotlib.pylab`, `sklearn.metrics`,
+  `scipy.linalg.fractional_matrix_power`, and
+  `plotting_functions.master_plotter`.
+- Debug `print(nf, nt)` statement inside `fourier_mode_2d` loop.
+- `scipy.linalg as sl` alias (retained `scipy.sparse.linalg` which is
+  actually used by the solvers).
+
+**Fixed**
+- `assert` error messages in `fourier_mode_2d` converted to f-strings.
+- `ValueError` messages in `gcr_systematics` converted to f-strings.
+- `sq_mat_tr2`: quadrant assignments simplified from four-element index
+  notation to two-element slice notation (no logic change).
+- `inv_mat`: removed intermediate `diag_el` variable; simplified to a
+  single `diag_inv` computation.
+- Consistent `===` section banners replacing ad-hoc inline comments.
+
+---
+
+### `sohini_test.py`
+
+**Added**
+- Module-level docstring clarifying this is the production 100 k-iteration
+  run script and distinguishing it from `sys_sampler_wrapper.py`.
+- `calc_ps` docstring with parameters and returns.
+- `===` section banners throughout.
+
+**Removed**
+- Unused imports: `pylab`, `UVData`, `Quantity`, `units`, `ticker`,
+  `cmcrameri`, `sys`.
+- All commented-out `op_dir` and `nm_list` alternatives moved to inline
+  comments on the active lines (case labels preserved).
+- Commented-out uvh5 foreground loading block.
+- Commented-out dummy foreground fitting block.
+- Redundant `flags_i` variable — inlined directly into `gibbs_sample`.
+
+**Fixed**
+- f-strings replace all `.format()` calls.
+- `lsts` pre-defined array now passed to `gibbs_sample` instead of
+  recomputing `np.linspace(0., 1., Ntimes)` at the call site.
+- Consistent spacing and argument alignment in `gibbs_sample` call.
+
+---
+
 ## 2026-03-26 — Second version of HERA test notebook
- 
+
 **Added**
 
 - Added new cable reflection notebook in tools/hera_val/
@@ -11,7 +68,7 @@
 
 ## 2026-03-26 — HERA validation notebook refactor
 
-## 2026-03 — `sohini_test.py` cleanup
+## 2026-03 — `sohini_test.py` cleanup (first pass)
 
 ### `sohini_test.py`
 
