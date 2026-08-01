@@ -80,7 +80,7 @@ def naive_pspec(data, subtract_mean=True, taper=True):
         
     return np.fft.fftshift(abs(np.fft.fft(d))**2)
 
-# Make a  power spectrum
+# Make a power spectrum
 def calc_ps(s):
     # NOTE: This uses inverse FFT instead of FFT to get the right normalisation
     axes = (1,)
@@ -329,57 +329,6 @@ def write_numpy_files(
     np.save(fp / f"chisq.npy", chisq)
     np.save(fp / f"ln-post.npy", ln_post)
 
-
-# def write_numpy_files_dynamic(
-#     fp,
-#     signal_amps,
-#     signal_ps,
-#     fg_amps,
-#     sys_amps,
-#     chisq,
-#     ln_post
-# ):
-#     """
-#     Write sampling arrays to disk as numpy files for every iteration.
-
-#     Parameters
-#     ----------
-#     fp : str or Path
-#         Output directory for files.
-#     signal_cr (array_like):
-#         Samples of the signal, shape `(Niter, Ntimes, Nfreqs)`.
-#     signal_S (array_like):
-#         Samples of the signal covariance, shape `(Niter, Nfreqs, Nfreqs)`.
-#         These are simply transformations of the power spectrum.
-#     signal_ps (array_like):
-#         Sample of the signal power spectrum bandpowers, shape
-#         `(Niter, Nfreqs)`.
-#     fg_amps (array_like):
-#         Samples of the foreground amplitudes, shape `(Niter, Nmodes)`.
-#     b_sys (array_like):
-#         Samples of the systematics amplitudes, shape `(Niter,len(nm_list))
-#     chisq (array_like):
-#         Chi-squared value per iteration, shape `(Niter, Ntimes, Nfreqs)`.
-#     ln_post (array_like):
-#         Natural log of the posterior probability per iteration, shape
-#         `(Niter,)`.
-
-#     """
-#     if not isinstance(fp, Path):
-#         fp = Path(fp)
-#     with open(fp / f"gcr-eor_dynamic.npy",'a') as file:
-#         np.savetxt(file,signal_amps)
-#     with open(fp / f"dps-eor_dynamic.npy",'a') as file:
-#         np.savetxt(file,signal_ps)
-#     with open(fp / f"fg-amps_dynamic.npy",'a') as file:
-#         np.savetxt(file,fg_amps)  
-#     with open(fp / f"b-sys_dynamic.npy",'a') as file:
-#         np.savetxt(file,sys_amps)  
-#     with open(fp / f"chisq_dynamic.npy",'a') as file:
-#         np.savetxt(file,chisq) 
-#     with open(fp / f"ln-post_dynamic.npy",'a') as file:
-#         print(np.array([ln_post]))
-#         np.savetxt(file,np.array([ln_post])) 
 
 def append_gibbs_sample_h5(fp, overwrite=False, flush=True,batch_axis=None, **arrays):
     """
