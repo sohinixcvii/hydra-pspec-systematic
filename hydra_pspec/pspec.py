@@ -1,24 +1,14 @@
 import numpy as np
 import scipy as sp
-from scipy.signal.windows import blackmanharris as BH
+import scipy.linalg
 from scipy.stats import invgamma
 from scipy.interpolate import interp1d
-import scipy.linalg
 from . import sys_solver as sys_sol
-from multiprocess import Pool, current_process
+from multiprocess import current_process
 from . import utils
-import os, time
-import cProfile
-import pstats
-import sys
-import uvtools
+import time
 from uvtools.dspec import gen_window
 from uvtools.utils import FFT
-from pyuvdata import UVData
-from tqdm import tqdm  #For progress bars
-from .plotting_functions import master_plotter #For plotting iterations
-#uvd=UVData() #Loading uvh5 files
-#pr=cProfile.Profile() #For profiling
 
 def data_dly_fr(data, freqs, times, windows=None,
                     freq_window_kwargs=None, time_window_kwargs=None):
@@ -164,7 +154,7 @@ def sample_pspec(s, prior, ngrid=120, sk=None,max_prior_iter=10000):
     beta = np.sum(sk * sk.conj(), axis=0).real # normalisation
 
     # Sample cdf logarithmically between provided prior bounds
-    xgrid = np.logspace(np.log10(prior.min()), np.log10(prior.max()), ngrid) #FIXME: the prior min is 0, can't have that. 
+    xgrid = np.logspace(np.log10(prior.min()), np.log10(prior.max()), ngrid)
     
     samples = np.zeros(Nfreqs)
     for i in range(Nfreqs):
@@ -283,7 +273,7 @@ def gcr_fg_and_signal_per_time(idx,
     """
     # Set parallel-safe random seed
     pid = current_process().pid
-    seed = None # FIXME: multiprocess_seed + pid*1000 + idx
+    seed = None
     np.random.seed(seed)
 
     Nfreqs, Nmodes = fg_modes.shape
@@ -432,7 +422,6 @@ def gcr_fg_and_signal(
     if verbose:
         t_start = time.time()
     
-    # FIXME
     samples = []
     residuals = []
     info = []
@@ -458,29 +447,6 @@ def gcr_fg_and_signal(
         residuals.append(_r)
         info.append(_i)
 
-    """
-    with Pool(nproc) as pool:
-        samples, residuals,  info = zip(*pool.map(
-            lambda idx: gcr_fg_and_signal_per_time(
-                idx=idx,
-                vis=vis[idx],
-                fg_modes=fg_modes,
-                Nparams=Nparams,
-                sys_model=sys_model[idx],
-                flags=flags,
-                Einv=Einv,
-                sqrtE=sqrtE,
-                Ninv=Ninv,
-                sqrtNinv=sqrtNinv, 
-                map_estimate=map_estimate,
-                solver_tol=solver_tol,
-                verbose=verbose,
-                multiprocess_seed=100000
-            ),
-            time_idxs,
-        )
-        )
-    """
     samples = np.array(samples).reshape((vis.shape[0], -1)) # Do NOT use order F
     residuals = np.array(residuals)
     info = np.array(info)
@@ -545,8 +511,6 @@ def goodness_of_fit_statistics(data,
     """
     # Chi-squared is computed as the sum of ( |data - model - sys_model| / noise )^2,
     # i.e. as a sum of standard normal random variables.
-    # FIXME: this will need to be changed to account for time-dependent
-    # flags (i.e. when we have a different N per time).
     chisq = np.abs(data - data_model)**2 * Ninv.diagonal()[None, :]
     chisq_mean = chisq[:, flags].mean()
     chisq = chisq.real
@@ -568,11 +532,6 @@ def goodness_of_fit_statistics(data,
             @ Ninv[flags][:, flags]
             @ (data - data_model)[:, flags].T
         )
-        #- use_prior*(
-        #    signal_amps[:, flags].conj()
-        #    @ Sinv[flags][:, flags]
-        #    @ signal_amps[:, flags].T
-        #)
     ))
     ln_post = np.real(ln_post)
     if verbose:
@@ -697,12 +656,6 @@ def gibbs_step(
         sky_model = (signal_amps + fg_amps @ fg_modes.T)
     else:
         sky_model = sky_model
-
-    #import pylab as plt
-    #plt.matshow(sky_model.real)
-    #plt.colorbar()
-    #plt.show()
-
 
     # (2) Sample multiplicative systematics parameters
     if sample_systematics:

@@ -1,14 +1,8 @@
 # Function definitions for GCR solver
 
 import numpy as np
-from math import pi as pi
-import matplotlib.pylab as plt
-from scipy.linalg import fractional_matrix_power as fmp
-from sklearn.metrics import *
-import scipy.linalg as sl
-import scipy 
+import scipy
 import time
-from .plotting_functions import master_plotter
 
 
 def fourier_mode_2d(freqs_Hz, times_sec, modes, box=None):
@@ -55,7 +49,6 @@ def fourier_mode_2d(freqs_Hz, times_sec, modes, box=None):
     basis_fns = np.zeros((len(modes), Nfreqs, Ntimes), dtype=np.complex128)
     for i, mode in enumerate(modes):
         nf, nt = mode
-        print(nf, nt)
         assert isinstance(nf, int), "modes must only contain pairs of integers"
         assert isinstance(nt, int), "modes must only contain pairs of integers"
         assert nf in nfreq, "Delay mode nf=%d not in available range (%d -- %d)." \
@@ -66,9 +59,6 @@ def fourier_mode_2d(freqs_Hz, times_sec, modes, box=None):
         # Get mode indices
         idx_f = np.where(nfreq == nf)[0][0]
         idx_t = np.where(ntime == nt)[0][0]
-        #mode_idxs.append( (idx_f, idx_t) )
-
-        # print(kfreq[idx_f], ktime[idx_t])
 
         # Add basis function to operator
         basis_fns[i] = np.exp(2.*np.pi*1.j * (  kfreq[idx_f] * f[:,np.newaxis]
@@ -227,8 +217,7 @@ def gcr_systematics(data,
     # parametrisation is d = (1 + g) sky_model.
     resid = data - sky_model
 
-    # Flatten the data for operation
-    # FIXME: Do we need to specify F ordering?
+    # Flatten the data for operation (Fortran/column-major order required)
     r = resid.flatten(order='F')
     s = sky_model.flatten(order='F')
     

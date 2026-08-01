@@ -1,7 +1,5 @@
 
 import numpy as np
-
-#from multiprocess import Pool
 from multiprocessing import Pool
 
 def m(tau, s):

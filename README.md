@@ -10,8 +10,9 @@ delay power spectrum, all within a single self-consistent Bayesian framework.
 ## Repository layout
 
 ```
-hydra_copy/
-├── sohini_test.py                   # Main simulation entry point
+hydra-pspec-systematic/
+├── sys_sampler_wrapper.py           # Main simulation entry point
+├── benchmark_hydra.py               # Performance benchmarking
 ├── run-hydra-pspec.py               # MPI runner for real HERA visibility data
 │
 ├── hydra_pspec/                     # Core Python package
@@ -22,27 +23,20 @@ hydra_copy/
 │   ├── dpss.py                      # DPSS-based foreground mode fitting
 │   ├── lssa.py                      # LSSA sinusoid fitting
 │   ├── oqe.py                       # Optimal quadratic estimator
-│   ├── post_processing_funcs.py     # Results plotting and analysis (~3400 lines)
+│   ├── calc-vis-cov-matrices.py     # Compute per-baseline visibility covariance matrices
+│   ├── post_processing_funcs.py     # Results plotting and analysis
 │   └── plotting_functions.py        # Waterfall plot helpers
 │
-├── scripts/
-│   ├── calc-vis-cov-matrices.py     # Compute per-baseline visibility covariance matrices
+├── scripts_hera_val/
 │   ├── extract_hera_val_data.py     # Extract .npy arrays from HERA validation uvh5 files
 │   └── hera_val_gibbs_wrapper.py    # Gibbs sampler wrapper for HERA validation data
-│
-├── tests/
-│   ├── example.py                   # Basic usage example (uses older API — see Known Issues)
-│   ├── phil_test.py                 # Synthetic EoR/FG comparison test
-│   ├── solver_comps.py              # Solver comparison (low_dl_fr_0 config)
-│   └── filtered_and_masked_run.py   # Masked/filtered data test (high_dl_fr_0 config)
 │
 ├── tools/
 │   ├── hera_val/
 │   │   ├── sim_prep.py              # hera_sim integration — add crosstalk/reflections/noise
-│   │   ├── sim_prep_old.py              # older version of sim_prep.py
 │   │   ├── sim_config.yaml          # Systematics injection parameters
 │   │   ├── test-3.2.0.ipynb         # HERA validation notebook (loads from res/hera_val_npy/)
-│   │   ├── test_2.ipynb         # Takes npy visibilities and injects uncertainties into it. 
+│   │   ├── test_2.ipynb             # NPY visibility processing with uncertainty injection
 │   │   ├── Sys_Gen.ipynb            # Systematics generation notebook
 │   │   ├── RIMEz_beam_poly.npy      # RIMEz beam polynomial for noise modelling
 │   │   └── nm_list.npz              # Pre-computed systematic mode indices
@@ -78,13 +72,13 @@ hydra_copy/
 ├── paper_plots/
 │   └── 100k_runs/
 │       ├── low_dl_fr_0/             # Case I results  (nm = 3–6,   fr = 0)
-│       ├── high_dl_fr_0/            # Case II results (nm = 10–13, fr = 0) — default
+│       ├── high_dl_fr_0/            # Case II results (nm = 10–13, fr = 0)
 │       └── low_dl_fr_20/            # Case III results (nm = 3–6,  fr = 20)
 │
-├── outputs/                         # Run logs and test outputs
-├── config/
-│   └── pyproject.toml               # Build metadata and dependencies
-└── README.md
+├── benchmark_results/               # Benchmark plots and reports
+├── outputs/                         # Run logs and intermediate outputs
+└── config/
+    └── pyproject.toml               # Build metadata and dependencies
 ```
 
 ---
@@ -103,35 +97,35 @@ pip install -e .
 
 **Dependencies** (from `config/pyproject.toml`):
 
-| Package | Notes |
-|---|---|
-| Python ≥ 3.8 | |
-| numpy | |
-| scipy | |
-| multiprocess | Parallelised GCR solver |
-| pyuvdata | Reading/writing .uvh5 files |
-| astropy | Units, constants |
-| jsonargparse | CLI argument parsing in `run-hydra-pspec.py` |
-| matplotlib | |
-| mpi4py | MPI parallelism in `run-hydra-pspec.py` |
+| Package         | Notes                                        |
+|-----------------|----------------------------------------------|
+| Python ≥ 3.8    |                                              |
+| numpy           |                                              |
+| scipy           |                                              |
+| multiprocess    | Parallelised GCR solver                      |
+| pyuvdata        | Reading/writing .uvh5 files                  |
+| astropy         | Units, constants                             |
+| jsonargparse    | CLI argument parsing in `run-hydra-pspec.py` |
+| matplotlib      |                                              |
+| mpi4py          | MPI parallelism in `run-hydra-pspec.py`      |
 
 ---
 
 ## Quick start — synthetic simulations
 
-`sohini_test.py` generates synthetic visibility data (EoR + foregrounds +
+`sys_sampler_wrapper.py` generates synthetic visibility data (EoR + foregrounds +
 multiplicative gain systematics) and runs the full Gibbs sampler.
 
 ### Simulation cases
 
-Three configurations are defined; uncomment the desired block near the top of
-`sohini_test.py`:
+Three configurations are defined by editing the `nm_list` variable near the top
+of `sys_sampler_wrapper.py`:
 
-| Case | `nm_list` (delay-mode, fr-mode) pairs | `op_dir` |
-|---|---|---|
-| I | (3,0),(4,0),(5,0),(6,0) | `paper_plots/100k_runs/low_dl_fr_0/` |
-| II *(default)* | (10,0),(11,0),(12,0),(13,0) | `paper_plots/100k_runs/high_dl_fr_0/` |
-| III | (3,20),(4,20),(5,20),(6,20) | `paper_plots/100k_runs/low_dl_fr_20/` |
+| Case            | `nm_list` (delay-mode, fr-mode) pairs | `op_dir`                              |
+|-----------------|---------------------------------------|---------------------------------------|
+| I               | (3,0),(4,0),(5,0),(6,0)               | `paper_plots/100k_runs/low_dl_fr_0/`  |
+| II *(default)*  | (10,0),(11,0),(12,0),(13,0)           | `paper_plots/100k_runs/high_dl_fr_0/` |
+| III             | (3,20),(4,20),(5,20),(6,20)           | `paper_plots/100k_runs/low_dl_fr_20/` |
 
 Cases differ in which delay–fringe-rate Fourier modes are used to model the
 multiplicative gain systematics.
@@ -139,40 +133,40 @@ multiplicative gain systematics.
 ### Run
 
 ```bash
-conda run -n py10 python sohini_test.py
+conda run -n py10 python sys_sampler_wrapper.py
 ```
 
 The output directory (`op_dir`) is created automatically.
 
 ### Key simulation parameters
 
-| Parameter | Value | Description |
-|---|---|---|
-| `Ntimes` | 80 | Time integrations |
-| `Nfreqs` | 60 | Frequency channels |
-| `Nfgmodes` | 10 | Foreground Legendre modes |
-| `Niter` | 100 000 | Gibbs iterations |
-| `noise_ps` | 0.0004 | Noise power spectrum (arb. units) |
-| `eor_ps` | `0.0012 × (1 + 0.3 sin(...))` | EoR delay power spectrum |
-| `sys_amps_true` | `[1+4j, 2+3j, 3+2j, 4+1j]` | True systematic amplitudes |
+| Parameter          | Value                          | Description                       |
+|--------------------|--------------------------------|-----------------------------------|
+| `Ntimes`           | 80                             | Time integrations                 |
+| `Nfreqs`           | 60                             | Frequency channels                |
+| `Nfgmodes`         | 10                             | Foreground Legendre modes         |
+| `Niter`            | 100 000                        | Gibbs iterations                  |
+| `noise_ps`         | 0.0004                         | Noise power spectrum (arb. units) |
+| `eor_ps`           | `0.0012 × (1 + 0.3 sin(...))`  | EoR delay power spectrum          |
+| `sys_amps_true`    | `[1+4j, 2+3j, 3+2j, 4+1j]`    | True systematic amplitudes        |
 
 ### Outputs
 
 Saved to `op_dir`:
 
-| File | Shape | Description |
-|---|---|---|
-| `gain_true.npy` | (Ntimes, Nfreqs) | True systematic gain model |
-| `eor_true.npy` | (Ntimes, Nfreqs) | True EoR visibilities |
-| `fg_true.npy` | (Ntimes, Nfreqs) | True foreground visibilities |
-| `data_true.npy` | (Ntimes, Nfreqs) | Total data = EoR + FG + systematics |
-| `fgmodes.npy` | (Nfreqs, Nfgmodes) | Foreground basis matrix |
-| `gcr-eor.npy` | (Niter, Ntimes, Nfreqs) | Sampled EoR visibilities |
-| `dps-eor.npy` | (Niter, Nfreqs) | Sampled EoR delay power spectrum |
-| `fg-amps.npy` | (Niter, Nfgmodes) | Sampled foreground amplitudes |
-| `b-sys.npy` | (Niter, Nsys_modes) | Sampled systematic amplitudes |
-| `chisq.npy` | (Niter,) | χ² per iteration |
-| `ln-post.npy` | (Niter,) | Log-posterior per iteration |
+| File              | Shape                    | Description                         |
+|-------------------|--------------------------|-------------------------------------|
+| `gain_true.npy`   | (Ntimes, Nfreqs)         | True systematic gain model          |
+| `eor_true.npy`    | (Ntimes, Nfreqs)         | True EoR visibilities               |
+| `fg_true.npy`     | (Ntimes, Nfreqs)         | True foreground visibilities        |
+| `data_true.npy`   | (Ntimes, Nfreqs)         | Total data = EoR + FG + systematics |
+| `fgmodes.npy`     | (Nfreqs, Nfgmodes)       | Foreground basis matrix             |
+| `gcr-eor.npy`     | (Niter, Ntimes, Nfreqs)  | Sampled EoR visibilities            |
+| `dps-eor.npy`     | (Niter, Nfreqs)          | Sampled EoR delay power spectrum    |
+| `fg-amps.npy`     | (Niter, Nfgmodes)        | Sampled foreground amplitudes       |
+| `b-sys.npy`       | (Niter, Nsys_modes)      | Sampled systematic amplitudes       |
+| `chisq.npy`       | (Niter,)                 | χ² per iteration                    |
+| `ln-post.npy`     | (Niter,)                 | Log-posterior per iteration         |
 
 ---
 
@@ -194,30 +188,30 @@ mpirun -n <nranks> conda run -n py10 python run-hydra-pspec.py \
 
 ### Key arguments
 
-| Argument | Default | Description |
-|---|---|---|
-| `--file_paths` | *(required)* | Input UVData files |
-| `--out_dir` | `./out/` | Output directory |
-| `--Niter` | 100 | Gibbs iterations |
-| `--Nfgmodes` | 8 | Foreground modes |
-| `--freq_range` | all | Frequency selection in MHz: `'100'`, `'100-200'`, `'100,120,150'` |
-| `--ant_str` | all | Antenna / baseline selection |
-| `--nproc` | 1 | Multiprocessing workers per MPI rank |
-| `--clobber` | False | Overwrite existing per-baseline output directories |
-| `--map_estimate` | False | Return MAP estimate only (no full posterior sampling) |
+| Argument         | Default      | Description                                                        |
+|------------------|--------------|--------------------------------------------------------------------|
+| `--file_paths`   | *(required)* | Input UVData files                                                 |
+| `--out_dir`      | `./out/`     | Output directory                                                   |
+| `--Niter`        | 100          | Gibbs iterations                                                   |
+| `--Nfgmodes`     | 8            | Foreground modes                                                   |
+| `--freq_range`   | all          | Frequency selection in MHz: `'100'`, `'100-200'`, `'100,120,150'` |
+| `--ant_str`      | all          | Antenna / baseline selection                                       |
+| `--nproc`        | 1            | Multiprocessing workers per MPI rank                               |
+| `--clobber`      | False        | Overwrite existing per-baseline output directories                 |
+| `--map_estimate` | False        | Return MAP estimate only (no full posterior sampling)              |
 
 Per-baseline results are written to `out_dir/<ant1>-<ant2>/` using the same
-file naming convention as `sohini_test.py`.
+file naming convention as `sys_sampler_wrapper.py`.
 
 ---
 
-## Covariance matrix calculation — `scripts/calc-vis-cov-matrices.py`
+## Covariance matrix calculation — `hydra_pspec/calc-vis-cov-matrices.py`
 
 Computes time-averaged frequency–frequency covariance matrices from a
 visibility dataset, used to initialise the foreground model in `run-hydra-pspec.py`.
 
 ```bash
-conda run -n py10 python scripts/calc-vis-cov-matrices.py \
+conda run -n py10 python hydra_pspec/calc-vis-cov-matrices.py \
     data/*.uvh5 \
     --out-dir cov_out/ \
     --freq-range 100-200 \
@@ -228,12 +222,39 @@ Outputs per-baseline subdirectory: `cov.npy`, `evecs.npy`, `evals.npy`.
 
 ---
 
+## Benchmarking — `benchmark_hydra.py`
+
+Profiles wall-clock time and peak memory usage as a function of four input
+dimensions (all others held at baseline):
+
+| Dimension     | Baseline | Sweep values             |
+|---------------|----------|--------------------------|
+| `Ntimes`      | 80       | 10, 20, 40, 80, 120, 160 |
+| `Nfreqs`      | 60       | 20, 40, 60, 80, 100, 120 |
+| `Nfgmodes`    | 10       | 2, 5, 10, 15, 20, 30     |
+| `Nsys_modes`  | 4        | 1, 2, 4, 6, 8            |
+
+```bash
+conda run -n py10 python benchmark_hydra.py
+```
+
+Results are written to `benchmark_results/`:
+
+| File                    | Contents                                 |
+|-------------------------|------------------------------------------|
+| `scaling_overview.png`  | Time and memory vs each swept parameter  |
+| `subfunc_breakdown.png` | Per-sub-function timing vs `Ntimes`      |
+| `cprofile_report.txt`   | cProfile hot-path table                  |
+| `benchmark_summary.txt` | Full numerical results                   |
+
+---
+
 ## HERA validation workflow — `tools/hera_val/`
 
 ### 1. Extract .npy arrays from raw uvh5
 
 ```bash
-conda run -n py10 python scripts/extract_hera_val_data.py
+conda run -n py10 python scripts_hera_val/extract_hera_val_data.py
 ```
 
 Loads `res/test_data/*.uvh5`, forms pseudo-Stokes I, runs a 2D delay–fringe-rate
@@ -251,11 +272,11 @@ delay–fringe-rate) for:
 
 ### Systematics injection parameters (`tools/hera_val/sim_config.yaml`)
 
-| Component | Parameters |
-|---|---|
-| `reflection_spectrum` | 20 reflections, delays 200–1200 ns, amps 10⁻³–10⁻⁴ |
-| `reflections` | 2 discrete at 200 ns (amp 0.03) and 1200 ns (amp 0.008) |
-| `xtalk` | 10 cross-coupling copies, delays 900–1300 ns, amps 10⁻⁴–10⁻⁶ |
+| Component             | Parameters                                                    |
+|-----------------------|---------------------------------------------------------------|
+| `reflection_spectrum` | 20 reflections, delays 200–1200 ns, amps 10⁻³–10⁻⁴          |
+| `reflections`         | 2 discrete at 200 ns (amp 0.03) and 1200 ns (amp 0.008)      |
+| `xtalk`               | 10 cross-coupling copies, delays 900–1300 ns, amps 10⁻⁴–10⁻⁶ |
 
 ---
 
@@ -282,51 +303,40 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = gibbs_sample(
 
 Key functions:
 
-| Function | Description |
-|---|---|
-| `gibbs_sample(...)` | Full Gibbs chain — main entry point |
-| `gibbs_step(...)` | Single Gibbs iteration |
-| `gcr_fg_and_signal(...)` | Parallelised GCR solver for EoR + FG joint draw |
-| `sample_pspec(...)` | Draw from inverse-gamma power spectrum posterior |
-| `covariance_from_pspec(...)` | Convert delay PS to freq–freq covariance |
-| `goodness_of_fit_statistics(...)` | χ² and log-posterior |
-| `data_dly_fr(...)` | 2D FFT: freq–time → delay–fringe-rate |
+| Function                         | Description                                          |
+|----------------------------------|------------------------------------------------------|
+| `gibbs_sample(...)`              | Full Gibbs chain — main entry point                  |
+| `gibbs_step(...)`                | Single Gibbs iteration                               |
+| `gcr_fg_and_signal(...)`         | Parallelised GCR solver for EoR + FG joint draw      |
+| `sample_pspec(...)`              | Draw from inverse-gamma power spectrum posterior     |
+| `covariance_from_pspec(...)`     | Convert delay PS to freq–freq covariance             |
+| `goodness_of_fit_statistics(...)`| χ² and log-posterior                                 |
+| `data_dly_fr(...)`               | 2D FFT: freq–time → delay–fringe-rate                |
 
 ### `sys_solver.py` — systematics
 
-| Function | Description |
-|---|---|
-| `fourier_mode_2d(freqs_Hz, times_sec, modes)` | Build 2D Fourier basis from (delay, fr) mode pairs |
-| `sys_modes(freqs_Hz, times_sec, modes)` | Systematic mode operator (Nfreqs×Ntimes, Nmodes) |
-| `gcr_systematics(...)` | GCR draw for multiplicative systematic amplitudes |
-| `cholesky_inverse(A)` | Invert positive-definite matrix via Cholesky decomposition |
+| Function                                    | Description                                              |
+|---------------------------------------------|----------------------------------------------------------|
+| `fourier_mode_2d(freqs_Hz, times_sec, modes)` | Build 2D Fourier basis from (delay, fr) mode pairs     |
+| `sys_modes(freqs_Hz, times_sec, modes)`       | Systematic mode operator (Nfreqs×Ntimes, Nmodes)        |
+| `gcr_systematics(...)`                        | GCR draw for multiplicative systematic amplitudes       |
+| `cholesky_inverse(A)`                         | Invert positive-definite matrix via Cholesky            |
 
 ### `utils.py` — utilities
 
-| Function | Description |
-|---|---|
-| `fourier_operator(n)` | Dense n×n DFT matrix (fftshift convention) |
-| `naive_pspec(data, ...)` | Quick delay power spectrum via FFT |
-| `write_numpy_files(fp, ...)` | Write all sampler output arrays to `fp/` |
-| `append_gibbs_sample_h5(fp, ...)` | Stream Gibbs samples to HDF5 (avoids large in-memory arrays) |
-| `get_git_version_info()` | Retrieve current git hash and branch |
-| `form_pseudo_stokes_vis(uvd)` | UVData XX+YY → pseudo-Stokes I |
-| `filter_freqs(freq_str, freqs)` | Parse frequency selection string to Quantity array |
+| Function                          | Description                                                   |
+|-----------------------------------|---------------------------------------------------------------|
+| `fourier_operator(n)`             | Dense n×n DFT matrix (fftshift convention)                    |
+| `naive_pspec(data, ...)`          | Quick delay power spectrum via FFT                            |
+| `write_numpy_files(fp, ...)`      | Write all sampler output arrays to `fp/`                      |
+| `append_gibbs_sample_h5(fp, ...)` | Stream Gibbs samples to HDF5 (avoids large in-memory arrays)  |
+| `get_git_version_info()`          | Retrieve current git hash and branch                          |
+| `form_pseudo_stokes_vis(uvd)`     | UVData XX+YY → pseudo-Stokes I                                |
+| `filter_freqs(freq_str, freqs)`   | Parse frequency selection string to Quantity array            |
 
 ### `dpss.py` and `lssa.py` — foreground fitting
 
-| Function | Description |
-|---|---|
-| `dpss_fit_modes(d, w, freqs, cov, ...)` | Weighted DPSS fit to masked complex 1D data |
-| `lssa_fit_modes(d, freqs, invcov, ...)` | Weighted LSSA sinusoid fit to masked data |
-
----
-
-## Known issues
-
-- **`tests/solver_comps.py`, `tests/filtered_and_masked_run.py`**: Use the path
-  `'npy_data/fg_true.npy'` (missing `res/` prefix). Will fail unless run from a
-  directory that contains a symlink or copy.
-- **`tests/example.py`**: Uses the deprecated `gibbs_sample_with_fg` API and a
-  hardcoded absolute path to a UVData file.
-- **`tests/phil_test.py`**: Hardcoded absolute path to a `.uvh5` file.
+| Function                               | Description                                   |
+|----------------------------------------|-----------------------------------------------|
+| `dpss_fit_modes(d, w, freqs, cov, ...)` | Weighted DPSS fit to masked complex 1D data  |
+| `lssa_fit_modes(d, freqs, invcov, ...)` | Weighted LSSA sinusoid fit to masked data    |
