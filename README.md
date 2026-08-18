@@ -343,3 +343,18 @@ Key functions:
 - `tests/example.py`: Uses the deprecated `gibbs_sample_with_fg` API and a
   hardcoded absolute path to a UVData file.
 - `tests/phil_test.py`: Hardcoded absolute path to a `.uvh5` file.
+
+---
+
+## Citation
+
+If you use this code in your work, please cite:
+
+```bibtex
+@article{dutta2026bayesian,
+  title={Bayesian power spectrum estimation with modelling of systematic effects in delay-fringe rate space},
+  author={Dutta, Sohini and Bull, Philip and Burba, Jacob and Wilensky, Michael J and Zhang, Zheng and Nasirudin, Ainulnabilah},
+  journal={arXiv preprint arXiv:2604.26885},
+  year={2026}
+}
+```
