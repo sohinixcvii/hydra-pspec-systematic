@@ -38,8 +38,8 @@ with open('res/hydra_ascii.txt', 'r') as f:
 # =============================================================================
 # Configuration
 # =============================================================================
-Ntimes   = 20 #80
-Nfreqs   = 15 #60
+Ntimes   = 80
+Nfreqs   = 60
 Nfgmodes = 10
 Niter    = 250000
 
@@ -50,7 +50,7 @@ dummy_flag = False
 np.random.seed(11)
 
 # Output directory for sampler products
-op_dir = './paper_plots/truncated/low_dl_fr_20'
+op_dir = './paper_plots/250k_run/low_dl_fr_20'
 
 # Systematics mode pairs (delay index n, fringe-rate index m)
 # Case I  : nm_list = [(3,0),  (4,0),  (5,0),  (6,0)]
@@ -59,11 +59,11 @@ op_dir = './paper_plots/truncated/low_dl_fr_20'
 # Truncated Case I  : nm_list = [(3,0),  (4,0)]
 # Truncated Case II : nm_list = [(5,0), (6,0)]
 # Truncated Case III: nm_list = [(3,8), (4,8)]
-nm_list = [(3,8), (4,8)]   # Case III - truncated
+nm_list = [(3,20), (4,20), (5,20), (6,20)]   # Case III - truncated
 
 # True systematics amplitudes
-# sys_amps_true = np.array([1. + 4j, 2. + 3j, 3. + 2j, 4. + 1j])
-sys_amps_true = np.array([12. + 5j, 4. + 20j]) #truncated case
+sys_amps_true = np.array([1. + 4j, 2. + 3j, 3. + 2j, 4. + 1j])
+# sys_amps_true = np.array([12. + 5j, 4. + 20j]) #truncated case
 
 # Noise power spectrum amplitude
 noise_ps_val = 0.0004

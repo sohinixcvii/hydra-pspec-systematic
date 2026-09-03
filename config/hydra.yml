@@ -1,0 +1,20 @@
+name: hydra
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10.14
+  - numpy
+  - matplotlib
+  - mpi4py
+  - scipy=1.13.1
+  - pathlib
+  - astropy
+  - multiprocess
+  - scikit-learn
+  - pyuvdata
+  - aipy[version='>=3.0rc2']
+  - tqdm
+  - cmcrameri
+  - jupyter
+prefix: /nvme2/scratch/sohini/miniconda3/envs/hydra
