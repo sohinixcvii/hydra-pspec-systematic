@@ -843,59 +843,67 @@ def gibbs_sample(
         print("Iter     Time [s]    Info    |Ax - b|    T_Sys(s)    Sys Info    Sys |Ax-b|    Chisq    ln Post")
         print("-----    --------    ----    --------    --------    --------    ----------    -----    -------")
 
-    for i in range(Niter):
-        if verbose:
-            print(f"{i+1:<9d}", end="")
+    # Hold the HDF5 sample file open for the whole chain. This writes exactly
+    # the same file as calling utils.append_gibbs_sample_h5() per iteration
+    # (same datasets, dtypes, chunking, compression and append order, flushed
+    # after every sample), but without reopening it Niter times.
+    h5_writer = utils.GibbsSampleH5Writer(fp=out_dir, overwrite=True)
 
-        # Do Gibbs iteration
-        signal_amps[i], signal_ps[i], fg_amps[i], sys_amps[i], chisq[i], ln_post[i] \
-            = gibbs_step(
-                vis=vis * flags,
-                flags=flags,
-                Ninv=Ninv,
-                signal_ps=signal_ps_current,
-                signal_ps_prior=signal_ps_prior,
-                fg_modes=fg_modes,
-                sys_prior=sys_prior,
-                sys_modes=sys_modes,
-                sys_amps=sys_amps_current,
-                sky_model=sky_model_initial,
-                nproc=nproc,
-                iter=i,
-                map_estimate=map_estimate,
-                solver=solver,
-                solver_tol=solver_tol,
-                sample_systematics=sample_systematics,
-                sample_eor_fg=sample_eor_fg,
-                sample_signal_ps=sample_signal_ps,
-                verbose=verbose
+    try:
+        for i in range(Niter):
+            if verbose:
+                print(f"{i+1:<9d}", end="")
+
+            # Do Gibbs iteration
+            signal_amps[i], signal_ps[i], fg_amps[i], sys_amps[i], chisq[i], ln_post[i] \
+                = gibbs_step(
+                    vis=vis * flags,
+                    flags=flags,
+                    Ninv=Ninv,
+                    signal_ps=signal_ps_current,
+                    signal_ps_prior=signal_ps_prior,
+                    fg_modes=fg_modes,
+                    sys_prior=sys_prior,
+                    sys_modes=sys_modes,
+                    sys_amps=sys_amps_current,
+                    sky_model=sky_model_initial,
+                    nproc=nproc,
+                    iter=i,
+                    map_estimate=map_estimate,
+                    solver=solver,
+                    solver_tol=solver_tol,
+                    sample_systematics=sample_systematics,
+                    sample_eor_fg=sample_eor_fg,
+                    sample_signal_ps=sample_signal_ps,
+                    verbose=verbose
+                )
+
+            # Update signal PS and systematics
+            signal_ps_current = signal_ps[i]
+            sys_amps_current = sys_amps[i]
+            h5_writer.append(
+                signal_amps=signal_amps[i],
+                signal_ps=signal_ps[i],
+                fg_amps=fg_amps[i],
+                sys_amps=sys_amps[i],
+                chisq=chisq[i],
+                ln_post=ln_post[i] # scalar is fine
             )
-
-        # Update signal PS and systematics
-        signal_ps_current = signal_ps[i]
-        sys_amps_current = sys_amps[i]
-        utils.append_gibbs_sample_h5(
-            fp=out_dir,
-            overwrite=(i == 0),          # truncate on the very first call
-            signal_amps=signal_amps[i],
-            signal_ps=signal_ps[i],
-            fg_amps=fg_amps[i],
-            sys_amps=sys_amps[i],
-            chisq=chisq[i],
-            ln_post=ln_post[i] # scalar is fine
-        )
         
-        if out_dir is not None and (i+1) % write_Niter == 0:
-            # Write current set of samples to disk
-            utils.write_numpy_files(
-                out_dir,
-                signal_amps[:i+1],
-                signal_ps[:i+1],
-                fg_amps[:i+1],
-                sys_amps[:i+1],
-                chisq[:i+1],
-                ln_post[:i+1]
-            )
+            if out_dir is not None and (i+1) % write_Niter == 0:
+                # Write current set of samples to disk
+                utils.write_numpy_files(
+                    out_dir,
+                    signal_amps[:i+1],
+                    signal_ps[:i+1],
+                    fg_amps[:i+1],
+                    sys_amps[:i+1],
+                    chisq[:i+1],
+                    ln_post[:i+1]
+                )
+    finally:
+        h5_writer.close()
+
     if out_dir is not None and Niter % write_Niter > 0:
         # Write all samples to disk
         utils.write_numpy_files(

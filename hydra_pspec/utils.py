@@ -330,6 +330,164 @@ def write_numpy_files(
     np.save(fp / f"ln-post.npy", ln_post)
 
 
+def _open_gibbs_sample_h5(fp, overwrite=False):
+    """
+    Resolve the output path and open ``fp/'gibbs_samples.h5'`` for appending.
+
+    Shared by :func:`append_gibbs_sample_h5` and :class:`GibbsSampleH5Writer`
+    so that both use identical path, truncation and open semantics.
+
+    Parameters
+    ----------
+    fp : str or Path
+        Output directory (creates fp/'gibbs_samples.h5').
+    overwrite : bool
+        If True and file exists, delete it (use at the start of a run).
+
+    Returns
+    -------
+    h5py.File
+        File opened in append mode. The caller is responsible for closing it.
+    """
+    fp = Path(fp)
+    fp.mkdir(parents=True, exist_ok=True)
+    h5_path = fp / "gibbs_samples.h5"
+
+    if overwrite and h5_path.exists():
+        os.remove(h5_path)
+
+    return h5py.File(h5_path, "a")
+
+
+def _append_arrays_to_h5(f, batch_axis=None, **arrays):
+    """
+    Append samples to datasets of an already-open HDF5 file, creating them on
+    first use.
+
+    This is the shared body of :func:`append_gibbs_sample_h5`; see that function
+    for the semantics of `batch_axis` and `arrays`.
+
+    Parameters
+    ----------
+    f : h5py.File
+        File open in a writable mode.
+    batch_axis : None or int
+        If int, the axis in each array that indexes multiple samples to append.
+    **arrays : name=array_like
+        Per-quantity sample(s). Shapes must be consistent across calls.
+    """
+    for name, arr in arrays.items():
+        arr = np.asarray(arr)
+
+        # Arrange as (B, ...) where B=number of samples to append this call
+        if batch_axis is None:
+            batch = arr[np.newaxis, ...]   # (1, ...)
+            per_sample_shape = arr.shape
+            dtype = arr.dtype
+        else:
+            batch = np.moveaxis(arr, batch_axis, 0)  # (B, ...)
+            per_sample_shape = batch.shape[1:]
+            dtype = batch.dtype
+
+        # Create dataset on first sight
+        if name not in f:
+            f.create_dataset(
+                name,
+                shape=(0,) + per_sample_shape,
+                maxshape=(None,) + per_sample_shape,
+                dtype=dtype,
+                chunks=(max(1, min(32, batch.shape[0])),) + per_sample_shape,
+                compression="gzip"
+            )
+
+        dset = f[name]
+
+        # Validate shape consistency
+        if dset.shape[1:] != per_sample_shape:
+            raise ValueError(
+                f"{name}: incoming per-sample shape {per_sample_shape} "
+                f"does not match existing {dset.shape[1:]}."
+            )
+
+        # Append rows
+        i0 = dset.shape[0]
+        i1 = i0 + batch.shape[0]
+        dset.resize(i1, axis=0)
+        dset[i0:i1, ...] = batch
+
+
+class GibbsSampleH5Writer:
+    """
+    Context manager that holds ``fp/'gibbs_samples.h5'`` open across many
+    appends.
+
+    Functionally identical to calling :func:`append_gibbs_sample_h5` once per
+    sample -- same file path, dataset names, shapes, dtypes, chunking, gzip
+    compression and append order -- but it avoids reopening and closing the
+    file on every sample, which dominates the per-sample cost in long chains.
+
+    The file is still flushed after every append (when `flush` is True), so a
+    chain that is killed part-way through leaves a readable file containing
+    every sample appended so far, exactly as before.
+
+    Note that while the writer is open the file is held by HDF5's file lock, so
+    other processes cannot open it for reading until the chain finishes.
+
+    Parameters
+    ----------
+    fp : str or Path
+        Output directory (creates fp/'gibbs_samples.h5').
+    overwrite : bool
+        If True and file exists, delete it on open (use at the start of a run).
+    flush : bool
+        Flush file to disk after each append.
+    batch_axis : None or int
+        Default `batch_axis` for :meth:`append`; see
+        :func:`append_gibbs_sample_h5`.
+
+    Examples
+    --------
+    >>> with GibbsSampleH5Writer(out_dir, overwrite=True) as writer:
+    ...     for i in range(Niter):
+    ...         writer.append(signal_ps=signal_ps[i], ln_post=ln_post[i])
+    """
+
+    def __init__(self, fp, overwrite=False, flush=True, batch_axis=None):
+        self.flush = flush
+        self.batch_axis = batch_axis
+        self._f = _open_gibbs_sample_h5(fp, overwrite=overwrite)
+
+    def append(self, batch_axis=None, **arrays):
+        """
+        Append one sample (or a batch) to the open file.
+
+        Parameters
+        ----------
+        batch_axis : None or int
+            Overrides the writer's default `batch_axis` when not None.
+        **arrays : name=array_like
+            Per-quantity sample(s). Shapes must be consistent across calls.
+        """
+        if batch_axis is None:
+            batch_axis = self.batch_axis
+        _append_arrays_to_h5(self._f, batch_axis=batch_axis, **arrays)
+        if self.flush:
+            self._f.flush()
+
+    def close(self):
+        """Close the underlying file. Idempotent."""
+        if self._f is not None:
+            self._f.close()
+            self._f = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+        return False
+
+
 def append_gibbs_sample_h5(fp, overwrite=False, flush=True,batch_axis=None, **arrays):
     """
     Append Gibbs samples to an HDF5 file, creating datasets on first use.
@@ -340,6 +498,10 @@ def append_gibbs_sample_h5(fp, overwrite=False, flush=True,batch_axis=None, **ar
       (e.g., (B,n,m)) and appends B rows at once.
 
     Complex dtypes are preserved.
+
+    This opens and closes the file on every call. To append many samples in a
+    loop, use :class:`GibbsSampleH5Writer`, which produces an identical file
+    while keeping the file open.
 
     Parameters
     ----------
@@ -354,52 +516,8 @@ def append_gibbs_sample_h5(fp, overwrite=False, flush=True,batch_axis=None, **ar
     **arrays : name=array_like
         Per-quantity sample(s). Shapes must be consistent across calls.
     """
-    fp = Path(fp)
-    fp.mkdir(parents=True, exist_ok=True)
-    h5_path = fp / "gibbs_samples.h5"
-
-    if overwrite and h5_path.exists():
-        os.remove(h5_path)
-
-    with h5py.File(h5_path, "a") as f:
-        for name, arr in arrays.items():
-            arr = np.asarray(arr)
-
-            # Arrange as (B, ...) where B=number of samples to append this call
-            if batch_axis is None:
-                batch = arr[np.newaxis, ...]   # (1, ...)
-                per_sample_shape = arr.shape
-                dtype = arr.dtype
-            else:
-                batch = np.moveaxis(arr, batch_axis, 0)  # (B, ...)
-                per_sample_shape = batch.shape[1:]
-                dtype = batch.dtype
-
-            # Create dataset on first sight
-            if name not in f:
-                f.create_dataset(
-                    name,
-                    shape=(0,) + per_sample_shape,
-                    maxshape=(None,) + per_sample_shape,
-                    dtype=dtype,
-                    chunks=(max(1, min(32, batch.shape[0])),) + per_sample_shape,
-                    compression="gzip"
-                )
-
-            dset = f[name]
-
-            # Validate shape consistency
-            if dset.shape[1:] != per_sample_shape:
-                raise ValueError(
-                    f"{name}: incoming per-sample shape {per_sample_shape} "
-                    f"does not match existing {dset.shape[1:]}."
-                )
-
-            # Append rows
-            i0 = dset.shape[0]
-            i1 = i0 + batch.shape[0]
-            dset.resize(i1, axis=0)
-            dset[i0:i1, ...] = batch
+    with _open_gibbs_sample_h5(fp, overwrite=overwrite) as f:
+        _append_arrays_to_h5(f, batch_axis=batch_axis, **arrays)
 
         if flush:
             f.flush()
