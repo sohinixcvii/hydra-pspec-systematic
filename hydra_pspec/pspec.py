@@ -215,7 +215,7 @@ def sprior(signals, bins, factor):
 def gcr_fg_and_signal_per_time(idx, 
                                vis, 
                                Einv, 
-                               sqrtE, 
+                               sqrtEinv, 
                                sqrtNinv, 
                                Nparams, 
                                sys_model, 
@@ -226,7 +226,8 @@ def gcr_fg_and_signal_per_time(idx,
                                verbose=False,
                                multiprocess_seed=None,
                                solver='lgmres',
-                               solver_tol=1e-12):
+                               solver_tol=1e-12,
+                               residual_tol=1e-6):
     """
     Solves the GCR equation for the joint foreground + signal model 
     for a single time
@@ -246,8 +247,8 @@ def gcr_fg_and_signal_per_time(idx,
             `(Nfreqs,)`.
         Einv (array_like):
             Current value of the EoR signal frequency-frequency covariance inverse.
-        sqrtE (array_like):
-            Square-root of E matrix (Nfreqs, Nfreqs)
+        sqrtEinv (array_like):
+            Square-root of the Einv matrix, i.e. E^-1/2 (Nfreqs, Nfreqs)
         Ninv (array_like):
             Inverse noise variance matrix. This can either have shape
             `(Ntimes, Nfreqs, Nfreqs)`, one for each time, or can be a common
@@ -259,7 +260,12 @@ def gcr_fg_and_signal_per_time(idx,
             derived from a PCA decomposition of a model foreground covariance
             matrix or similar.
         solver_tol (float):
-            Tolerance `tol` for scipy linear solvers.
+            Tolerance `tol` for scipy linear solvers. Retained for API
+            compatibility; the GCR step now uses a direct solve.
+        residual_tol (float):
+            Maximum allowed relative residual |Ax - b| / |b| of the GCR direct
+            solve. Exceeding it raises, indicating a singular or hopelessly
+            ill-conditioned system.
         
     Returns:
         xsoln (array_like):
@@ -286,8 +292,8 @@ def gcr_fg_and_signal_per_time(idx,
     # Construct block operator matrix
     A = np.zeros((Nparams, Nparams), dtype=complex)
     
-    # A_11: g^daggerdag E^-1 g + g^dagger * N^-1 * g
-    A[:Nfreqs, :Nfreqs] = sys_model.conj()[:,np.newaxis] * Einv * sys_model[:,np.newaxis] \
+    # A_11: g^dagger E^-1 g + g^dagger * N^-1 * g
+    A[:Nfreqs, :Nfreqs] = sys_model.conj()[:,np.newaxis] * Einv * sys_model[np.newaxis,:] \
                         + np.diag(Ni_flagged)
     
     # A_12: g^dagger * N^-1 * g * G
@@ -298,10 +304,6 @@ def gcr_fg_and_signal_per_time(idx,
     
     # A_22: G^dagger * g^dagger * N^-1 * g * G 
     A[Nfreqs:, Nfreqs:] = fg_modes.T.conj() @ (Ni_flagged[:,np.newaxis] * fg_modes)
-    # Basic diagonal preconditioner
-    Ainv_estimate = np.diag(1. / np.diag(A))
-    #Ainv_estimate = np.linalg.pinv(A)
-
     # Construct fluctuation terms
     if map_estimate:
         oma = np.zeros((Nfreqs, 1), dtype=complex)
@@ -315,31 +317,32 @@ def gcr_fg_and_signal_per_time(idx,
     # Construct RHS vector
     b = np.zeros((Nfreqs + Nmodes, 1), dtype=complex)
     b[:Nfreqs] = (sys_model.conj() * Ninv.diagonal() * d).T \
-               +  sys_model.conj()[:,np.newaxis] * (sqrtE @ oma + sqrtNinv[:,np.newaxis] * omb)
+               +  sys_model.conj()[:,np.newaxis] * (sqrtEinv @ oma + sqrtNinv[:,np.newaxis] * omb)
     b[Nfreqs:] = fg_modes.T.conj() @ (
                      (sys_model.conj() * Ninv.diagonal() * d).T \
                    + (sys_model.conj()[:,np.newaxis] * sqrtNinv[:,np.newaxis] * omb) )
     
-    # Run CG solver, preconditioned by M ~ A^-1
-    x0 = None
-    # xsoln, info = sp.sparse.linalg.cgs(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol, maxiter=8000)
-    xsoln, info = sp.sparse.linalg.gmres(A, b, x0=x0, M=Ainv_estimate, tol=solver_tol, maxiter=8000)
-    
-    # Check solution
-    if info > 0:
-        # Try again with different solver
-        xsoln, info2 = sp.sparse.linalg.bicgstab(A, 
-                                                 b, 
-                                                 x0=x0, 
-                                                 M=Ainv_estimate, 
-                                                 tol=solver_tol, 
-                                                 maxiter=8000)
-        if info2 != 0:
-            raise ValueError("GCR solver failed after retry; pid %d, time idx %d, info %d, info2 %d" \
-                             % (pid, idx, info, info2))
-    if info < 0:
-        raise ValueError("GCR solver failed; pid %d, time idx %d, info %d" \
-                         % (pid, idx, info))
+    # Solve the dense (Nfreqs + Nmodes) square system directly. The system is
+    # small (e.g. 25x25 for Nfreqs=15, Nmodes=10), so an LU solve is both faster
+    # and more accurate than iterating, and it has no convergence criterion to
+    # stagnate against on ill-conditioned draws.
+    xsoln = np.linalg.solve(A, b).ravel()   # 1-D, as the iterative solvers returned
+
+    # np.linalg.solve does not flag singular systems, so check the residual
+    # explicitly. This replaces the `info` check of the previous iterative
+    # solvers and keeps a failed solve loud rather than silently returning a
+    # garbage sample.
+    b_norm = np.linalg.norm(b)
+    rel_residual = np.linalg.norm(A @ xsoln - b[:, 0])
+    if b_norm > 0.:
+        rel_residual /= b_norm
+    if not np.isfinite(rel_residual) or rel_residual > residual_tol:
+        raise ValueError(
+            "GCR direct solve inaccurate; pid %d, time idx %d, "
+            "relative residual %.3e exceeds residual_tol %.3e (cond(A) = %.3e)"
+            % (pid, idx, rel_residual, residual_tol, np.linalg.cond(A))
+        )
+    info = 0
 
     # Print residual if verbose mode enabled
     if verbose:
@@ -364,6 +367,7 @@ def gcr_fg_and_signal(
     map_estimate=False,
     solver='lgmres',
     solver_tol=1e-12,
+    residual_tol=1e-6,
     verbose=False,
 ):
     """
@@ -391,7 +395,12 @@ def gcr_fg_and_signal(
         map_estimate (bool):
             Provide the maximum a posteriori sample.
         solver_tol (float):
-            Tolerance `tol` for scipy linear solvers.
+            Tolerance `tol` for scipy linear solvers. Retained for API
+            compatibility; the GCR step now uses a direct solve.
+        residual_tol (float):
+            Maximum allowed relative residual |Ax - b| / |b| of the GCR direct
+            solve. Exceeding it raises, indicating a singular or hopelessly
+            ill-conditioned system.
         verbose (bool):
             If True, output basic timing stats about each iteration.
 
@@ -413,9 +422,10 @@ def gcr_fg_and_signal(
     time_idxs = np.arange(vis.shape[0])
     
     # Pre-compute quantities that are constant in time
-    E = covariance_from_pspec(signal_ps, fourier_op)
     Einv = covariance_from_pspec(1./signal_ps, fourier_op)
-    sqrtE = sp.linalg.sqrtm(E) 
+    # Cov(fluctuation term of b) must equal A, so the signal term needs E^-1/2
+    # (matching the noise term, which uses N^-1/2 = sqrtNinv).
+    sqrtEinv = sp.linalg.sqrtm(Einv)
     sqrtNinv = np.sqrt(np.diag(Ninv))
     
     # Run GCR solver on each time sample in parallel
@@ -434,12 +444,13 @@ def gcr_fg_and_signal(
                 sys_model=sys_model[idx],
                 flags=flags,
                 Einv=Einv,
-                sqrtE=sqrtE,
+                sqrtEinv=sqrtEinv,
                 Ninv=Ninv,
                 sqrtNinv=sqrtNinv, 
                 map_estimate=map_estimate,
                 solver=solver,
                 solver_tol=solver_tol,
+                residual_tol=residual_tol,
                 verbose=verbose,
                 multiprocess_seed=100000
             )
@@ -558,6 +569,7 @@ def gibbs_step(
     map_estimate=False,
     solver='lgmres',
     solver_tol=1e-12,
+    residual_tol=1e-6,
     verbose=True
 ):
     """
@@ -604,7 +616,12 @@ def gibbs_step(
         map_estimate (bool):
             Provide the maximum a posteriori sample.
         solver_tol (float):
-            Tolerance `tol` for scipy linear solvers.
+            Tolerance `tol` for scipy linear solvers. Retained for API
+            compatibility; the GCR step now uses a direct solve.
+        residual_tol (float):
+            Maximum allowed relative residual |Ax - b| / |b| of the GCR direct
+            solve. Exceeding it raises, indicating a singular or hopelessly
+            ill-conditioned system.
         verbose (bool):
             If True, output basic timing stats about each iteration.
 
@@ -646,6 +663,7 @@ def gibbs_step(
                         map_estimate=map_estimate,
                         solver=solver,
                         solver_tol=solver_tol,
+                        residual_tol=residual_tol,
                         verbose=verbose)   #Running test on the d=(1+delta g)s+n form of the equations 
         
         # Extract separate signal and FG parts from the solution
@@ -713,6 +731,7 @@ def gibbs_sample(
     sample_signal_ps=True,
     solver='lgmres',
     solver_tol=1e-12,
+    residual_tol=1e-6,
     verbose=True,
     nproc=1,
     write_Niter=100,
@@ -764,7 +783,12 @@ def gibbs_sample(
         seed (int):
             Random seed to use for random parts of the sampler.
         solver_tol (float):
-            Tolerance `tol` for scipy linear solvers.
+            Tolerance `tol` for scipy linear solvers. Retained for API
+            compatibility; the GCR step now uses a direct solve.
+        residual_tol (float):
+            Maximum allowed relative residual |Ax - b| / |b| of the GCR direct
+            solve. Exceeding it raises, indicating a singular or hopelessly
+            ill-conditioned system.
         verbose (bool):
             If True, output basic timing stats about each iteration.
         nproc (int):
@@ -872,6 +896,7 @@ def gibbs_sample(
                     map_estimate=map_estimate,
                     solver=solver,
                     solver_tol=solver_tol,
+                    residual_tol=residual_tol,
                     sample_systematics=sample_systematics,
                     sample_eor_fg=sample_eor_fg,
                     sample_signal_ps=sample_signal_ps,
