@@ -1,4 +1,122 @@
-*.pyc
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+sdist/
+wheels/
+*.egg-info/
+*.egg
+.installed.cfg
+MANIFEST
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# =============================================================================
+# OS / editor
+# =============================================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# =============================================================================
+# Sampler outputs
+# -----------------------------------------------------------------------------
+# Gibbs chains are large and fully regenerable from the wrapper + a seed, so
+# none of this belongs on GitHub. Sizes noted are what was on disk when these
+# rules were written.
+# =============================================================================
+# sys_sampler_wrapper.py op_dir
 paper_plots/
-res/
+# 1.2 GB of chain outputs
+tests/test_files/
+# benchmark_hydra.py products
+benchmark_results/
+# 66 MB of integration-run outputs
+hydra_integration_tests/
+# historical run directories
+results-seed-*/
+scripts_hera_val/*/output/
+
+# Chain products, wherever they land
+gibbs_samples.h5
+signal_amps.npy
+signal_ps.npy
+fg_amps.npy
+sys_amps.npy
+chisq.npy
+ln_post.npy
+
+# Runtime-prediction scratch
+gibbs_cal_*/
+sampler_stdout.log
+
+# =============================================================================
+# Large data formats
+# -----------------------------------------------------------------------------
+# Visibility files run 1-15 MB each. GitHub warns at 50 MB and hard-rejects at
+# 100 MB per file; more importantly they bloat every clone.
+# =============================================================================
+*.uvh5
+*.uvfits
+*.h5
+*.hdf5
+
+# =============================================================================
+# res/ -- input data
+# -----------------------------------------------------------------------------
+# res/ is 83 MB, but the sampler only loads ~1.4 MB of it. Ignore the
+# directory wholesale, then re-admit exactly the files the code reads, so a
+# fresh clone can still run sys_sampler_wrapper.py and
+# predict_sampler_runtime.py. (Re-including a path inside an ignored directory
+# requires un-ignoring each parent directory first -- hence the pairs below.)
+# =============================================================================
+res/*
+!res/hydra_ascii.txt
+
+!res/npy_data/
+res/npy_data/*
+!res/npy_data/eor_true.npy
+!res/npy_data/fg_true.npy
+!res/npy_data/freqs_full.npy
+!res/npy_data/lsts_full.npy
+
+!res/test_data/
+res/test_data/*
+!res/test_data/eor-cov.npy
+# Small text files that document the test dataset; keep them, drop the data.
+!res/test_data/README.md
+!res/test_data/config.yaml
+!res/test_data/plot-test-data-results.py
