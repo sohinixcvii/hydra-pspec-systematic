@@ -234,8 +234,7 @@ def gcr_fg_and_signal_per_time(idx,
     
     Parameters:
         idx (int):
-            Time index in the loop. Only used for setting the random seed 
-            and debug output.
+            Time index in the loop. Only used for debug output.
         vis (array_like):
             Visibility data being modelled (Ntimes, Nfreqs)
         Nparams (int):
@@ -277,10 +276,10 @@ def gcr_fg_and_signal_per_time(idx,
         info (int):
             Info from the linear solver. Contains convergence information. 0 indicates success. 
     """
-    # Set parallel-safe random seed
+    # Do NOT reseed the RNG here. The chain is seeded once, in gibbs_sample();
+    # reseeding per call (np.random.seed(None) draws fresh OS entropy) made the
+    # chain irreproducible regardless of the seed passed by the caller.
     pid = current_process().pid
-    seed = None
-    np.random.seed(seed)
 
     Nfreqs, Nmodes = fg_modes.shape
     d = vis.reshape((1, max(Nfreqs, len(vis.T))))  # Do NOT use order='F'
@@ -822,8 +821,13 @@ def gibbs_sample(
     if map_estimate:
         Niter = 1
         write_Niter = 1
-    else:
-        # Set random seed
+
+    # Seed the global RNG once per chain. Every random draw made below comes
+    # from this one stream, in a fixed serial order (per iteration: the GCR
+    # fluctuation terms for each time, then the systematics draw, then the
+    # power spectrum inversion sample), so a given seed reproduces the chain
+    # exactly. If seed is None the caller's own RNG state is left untouched.
+    if seed is not None:
         np.random.seed(seed)
 
     # Get shape of data/foreground modes

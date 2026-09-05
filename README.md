@@ -293,6 +293,22 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = gibbs_sample(
 )
 ```
 
+**Reproducibility.** Passing `seed` makes a chain bit-for-bit reproducible: the
+global NumPy RNG is seeded once, at the start of `gibbs_sample()`, and every
+random draw in the chain is taken from that one stream in a fixed serial order
+(per iteration: the GCR fluctuation terms for each time index, then the
+systematics draw, then the power spectrum inversion sample). Two runs with the
+same seed and the same inputs return identical `signal_amps`, `signal_ps`,
+`fg_amps`, `sys_amps`, `chisq` and `ln_post`; this holds for `map_estimate=True`
+as well. If `seed` is left as `None`, the caller's own RNG state is used and not
+reset, so seeding once in your driver script (as `sys_sampler_wrapper.py` does
+with `np.random.seed(11)`) also gives a reproducible chain.
+
+Reproducibility is exact within a given environment. The random draws are
+deterministic, but floating-point summation order in the linear algebra is not
+guaranteed to match across different NumPy/BLAS builds or platforms, so chains
+generated on different machines may differ in the last digits.
+
 Key functions:
 
 | Function                          | Description                                          |
