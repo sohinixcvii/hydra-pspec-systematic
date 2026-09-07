@@ -50,20 +50,25 @@ dummy_flag = False
 np.random.seed(11)
 
 # Output directory for sampler products
-op_dir = './paper_plots/250k_run/low_dl_fr_20'
+op_dir = './paper_plots/250k_run/caseiv'
 
 # Systematics mode pairs (delay index n, fringe-rate index m)
 # Case I  : nm_list = [(3,0),  (4,0),  (5,0),  (6,0)]
 # Case II : nm_list = [(10,0), (11,0), (12,0), (13,0)]
 # Case III: nm_list = [(3,20), (4,20), (5,20), (6,20)]
+# Case III: nm_list = [(3,20), (3,21), (3,22), (3,23)]
+# Case IV:  nm_list = [(3,0),  (4,0),  (5,0),  (6,0), (10,0), (11,0), (12,0), (13,0), (3,20), (3,21), (3,22), (3,23)]
 # Truncated Case I  : nm_list = [(3,0),  (4,0)]
 # Truncated Case II : nm_list = [(5,0), (6,0)]
 # Truncated Case III: nm_list = [(3,8), (4,8)]
-nm_list = [(3,20), (4,20), (5,20), (6,20)]   # Case III - truncated
+nm_list = [(3,0),  (4,0),  (5,0),  (6,0), (10,0), (11,0), (12,0), (13,0), (3,20), (3,21), (3,22), (3,23)]   # Case IV
 
 # True systematics amplitudes
-sys_amps_true = np.array([1. + 4j, 2. + 3j, 3. + 2j, 4. + 1j])
+# sys_amps_true = np.array([1. + 4j, 2. + 3j, 3. + 2j, 4. + 1j])
 # sys_amps_true = np.array([12. + 5j, 4. + 20j]) #truncated case
+sys_amps_true = np.array([1. + 4j, 2. + 3j, 3. + 2j, 4. + 1j,
+                          4. + 6j, 10. + 3j, 5. + 4j, 8. + 12j,
+                          10. + 3j, 8. + 2j, 1. + 4j, 4. + 1j])
 
 # Noise power spectrum amplitude
 noise_ps_val = 0.0004
