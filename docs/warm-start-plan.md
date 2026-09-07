@@ -1,6 +1,8 @@
 # Warm-start / chain-resume plan
 
-**Status:** survey complete, not implemented.
+**Status:** implemented. See [`warm-start.md`](warm-start.md) for the
+resulting feature, the API and how each blocker below was resolved. This
+document is kept as the original survey and rationale.
 **Target:** implement on a branch off `main`.
 
 ## Context

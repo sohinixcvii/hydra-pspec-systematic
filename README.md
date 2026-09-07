@@ -75,6 +75,13 @@ hydra-pspec-systematic/
 │       ├── high_dl_fr_0/            # Case II results (nm = 10–13, fr = 0)
 │       └── low_dl_fr_20/            # Case III results (nm = 3–6,  fr = 20)
 │
+├── docs/
+│   ├── warm-start.md                # Chain resume: usage, API, design notes
+│   └── warm-start-plan.md           # Original survey the above was built from
+│
+├── tests/
+│   └── test_warm_start.py           # Acceptance test: segmented chain == uninterrupted chain
+│
 ├── benchmark_results/               # Benchmark plots and reports
 ├── outputs/                         # Run logs and intermediate outputs
 └── config/
@@ -101,6 +108,8 @@ Dependencies (from config/pyproject.toml):
 | jsonargparse    | CLI argument parsing in `run-hydra-pspec.py` |
 | matplotlib      |                                              |
 | mpi4py          | MPI parallelism in `run-hydra-pspec.py`      |
+| h5py            | Incremental sample writing and chain resume  |
+| pytest          | Test suite (`pytest tests/`)                 |
 
 ---
 
@@ -131,6 +140,30 @@ conda run -n py10 python sys_sampler_wrapper.py
 
 The output directory (op_dir) is created automatically.
 
+Command-line flags override the values in the Configuration section:
+
+| Flag              | Description                                                        |
+|-------------------|--------------------------------------------------------------------|
+| `--Niter N`       | Iterations to run                                                  |
+| `--out-dir DIR`   | Output directory                                                   |
+| `--resume`        | Continue the chain in the output directory; `--Niter` is then the number of *additional* iterations |
+| `--no-export-npy` | Skip the `.npy` export; every sample is still written to `gibbs_samples.h5` |
+
+### Stopping and resuming a chain
+
+```bash
+conda run -n py10 python sys_sampler_wrapper.py --Niter 10000 --out-dir ./run_dir
+conda run -n py10 python sys_sampler_wrapper.py --Niter 10000 --out-dir ./run_dir --resume
+```
+
+The second command appends 10 000 more iterations, giving a 20 000-sample
+chain bit-identical to running 20 000 straight through. `--resume` is also how
+a chain killed part-way (a crash, a full disk, a scheduler time limit) is
+recovered: samples are flushed to `gibbs_samples.h5` every iteration, so at
+most the iteration in progress is lost.
+
+Full documentation: [`docs/warm-start.md`](docs/warm-start.md).
+
 Key simulation parameters
 
 | Parameter          | Value                          | Description                       |
@@ -160,6 +193,13 @@ Saved to `op_dir`:
 | `b-sys.npy`       | (Niter, Nsys_modes)      | Sampled systematic amplitudes       |
 | `chisq.npy`       | (Niter,)                 | χ² per iteration                    |
 | `ln-post.npy`     | (Niter,)                 | Log-posterior per iteration         |
+| `gibbs_samples.h5`| —                        | Every sample, flushed each iteration; the primary output |
+
+`gibbs_samples.h5` is written incrementally and is what a `--resume` reads. The
+six sample `.npy` files are a *derived export* of it, so on a resumed run they
+still hold the complete chain across every segment rather than the latest
+segment alone. The HDF5 file also carries the NumPy RNG state and the run's
+provenance metadata; see [`docs/warm-start.md`](docs/warm-start.md).
 
 ---
 
@@ -309,6 +349,22 @@ deterministic, but floating-point summation order in the linear algebra is not
 guaranteed to match across different NumPy/BLAS builds or platforms, so chains
 generated on different machines may differ in the last digits.
 
+**Warm start.** `resume=True` continues the chain already in `out_dir` instead
+of starting a new one; `Niter` is then the number of *additional* iterations.
+The Markov state (`signal_ps`, `sys_amps`) and the NumPy RNG state are read
+back from `gibbs_samples.h5`, so a segmented run is bit-identical to the
+uninterrupted run it replaces, and `signal_ps_initial`, `sys_initial` and
+`seed` are ignored. See [`docs/warm-start.md`](docs/warm-start.md).
+
+```python
+gibbs_sample(..., Niter=5000, out_dir='run_dir', seed=10)               # 0 -> 5000
+gibbs_sample(..., Niter=5000, out_dir='run_dir', seed=10, resume=True)  # 5000 -> 10000
+```
+
+Because `Niter` sizes the preallocated sample arrays, running a long chain in
+segments also caps the resident memory at one segment's worth: ~1.3 GB per 10k
+iterations at 80 x 60, against ~32 GB for 250k in one go.
+
 Key functions:
 
 | Function                          | Description                                          |
@@ -338,6 +394,12 @@ Key functions:
 | `naive_pspec(data, ...)`          | Quick delay power spectrum via FFT                            |
 | `write_numpy_files(fp, ...)`      | Write all sampler output arrays to `fp/`                      |
 | `append_gibbs_sample_h5(fp, ...)` | Stream Gibbs samples to HDF5 (avoids large in-memory arrays)  |
+| `read_gibbs_sample_h5(fp, index)` | Read one sample back, plus the chain length                   |
+| `h5_chain_length(fp)`             | Number of complete samples in a chain file                    |
+| `repair_h5_chain(fp)`             | Truncate datasets desynchronised by a crash mid-append        |
+| `save_rng_state` / `load_rng_state` | Persist and restore the NumPy RNG state for an exact resume |
+| `write_chain_metadata` / `check_chain_metadata` | Record run provenance; refuse a mismatched resume |
+| `export_npy_from_h5(fp)`          | Write the `.npy` outputs as an export of the full HDF5 chain  |
 | `get_git_version_info()`          | Retrieve current git hash and branch                          |
 | `form_pseudo_stokes_vis(uvd)`     | UVData XX+YY → pseudo-Stokes I                                |
 | `filter_freqs(freq_str, freqs)`   | Parse frequency selection string to Quantity array            |

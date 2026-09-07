@@ -8,21 +8,31 @@ a systematics gain model, defines priors, and runs the sampler.
 Usage
 -----
     python sys_sampler_wrapper.py
+    python sys_sampler_wrapper.py --Niter 10000
+    python sys_sampler_wrapper.py --resume --Niter 10000
+
+`--resume` continues the chain already in the output directory instead of
+starting a new one, and `--Niter` is then the number of *additional*
+iterations. On a resume the "true" arrays (`data_true`, `eor_true`, `fg_true`,
+`gain_true`) are loaded from the output directory rather than regenerated, so
+the resumed segment is guaranteed to sample the same data as the first: the
+generation here is only deterministic as long as `Ntimes`, `Nfreqs`,
+`dummy_flag` and the seed are untouched, and a resume against different data
+would otherwise fail silently.
+
+See docs/warm-start.md.
 
 Output
 ------
     Sampler products written to `op_dir` (see Configuration section).
 """
 
+import argparse
 import time
-import sys
+from pathlib import Path
 
 import numpy as np
 import scipy.special
-from pyuvdata import UVData
-from astropy import units
-import matplotlib.ticker as ticker
-import cmcrameri.cm as cmc
 import hydra_pspec as hp
 
 
@@ -47,10 +57,73 @@ Niter    = 250000
 # False to load the Burba et al. simulated EoR.
 dummy_flag = False
 
-np.random.seed(11)
-
 # Output directory for sampler products
 op_dir = './paper_plots/250k_run/low_dl_fr_20'
+
+
+# =============================================================================
+# Command line
+# =============================================================================
+parser = argparse.ArgumentParser(
+    description=__doc__,
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+)
+parser.add_argument(
+    "--resume",
+    action="store_true",
+    help="continue the chain already in the output directory instead of "
+         "starting a new one; --Niter is then the number of ADDITIONAL "
+         "iterations to run",
+)
+parser.add_argument(
+    "--Niter",
+    type=int,
+    default=Niter,
+    help=f"iterations to run (default: {Niter}). With --resume this is the "
+         "number of additional iterations, not the total chain length.",
+)
+parser.add_argument(
+    "--out-dir",
+    default=op_dir,
+    help=f"output directory for sampler products (default: {op_dir})",
+)
+parser.add_argument(
+    "--no-export-npy",
+    action="store_true",
+    help="skip the .npy export of the chain. Every sample is still written to "
+         "gibbs_samples.h5; use this when the chain is too large to duplicate "
+         "on disk (signal_amps is 19.2 GB for a 250k-iteration 80x60 run).",
+)
+args = parser.parse_args()
+
+Niter  = args.Niter
+op_dir = args.out_dir
+resume = args.resume
+
+op_path = Path(op_dir)
+op_path.mkdir(parents=True, exist_ok=True)
+
+# Seeds the generation of the simulated data below (not the sampler, which is
+# seeded separately by gibbs_sample). On a resume the arrays it produces are
+# loaded from disk instead, so this seed is only load-bearing for a fresh run.
+np.random.seed(11)
+
+
+def save_output(name, arr):
+    """
+    Write `arr` to `op_dir/name`, unless resuming.
+
+    On a resume these files are the record of what the running chain is
+    sampling; overwriting them with regenerated arrays would destroy the only
+    evidence of the data the first segment actually used.
+    """
+    if resume:
+        return
+    np.save(op_path / name, arr)
+
+
+print(f"Output directory: {op_dir}")
+print(f"Mode: {'resume' if resume else 'new chain'}, Niter={Niter}")
 
 # Systematics mode pairs (delay index n, fringe-rate index m)
 # Case I  : nm_list = [(3,0),  (4,0),  (5,0),  (6,0)]
@@ -117,7 +190,7 @@ sys_modes = hp.sys_solver.sys_modes(
 sys_prior = 100.**2 * np.eye(sys_amps_true.size)
 
 gain_true = (1. + (sys_modes @ sys_amps_true).reshape([Nfreqs, Ntimes]).T)
-np.save(op_dir + '/gain_true.npy', gain_true)
+save_output('gain_true.npy', gain_true)
 
 
 # =============================================================================
@@ -125,7 +198,17 @@ np.save(op_dir + '/gain_true.npy', gain_true)
 # =============================================================================
 fourier_op = hp.utils.fourier_operator(Nfreqs, unitary=True)
 
-if dummy_flag:
+if resume:
+    # Load what the first segment sampled rather than regenerating it. The
+    # generation below is deterministic under np.random.seed(11), so it happens
+    # to reproduce the same arrays -- but only while Ntimes, Nfreqs and
+    # dummy_flag are unchanged. Loading removes that dependency entirely.
+    eor_true = np.load(op_path / 'eor_true.npy')
+    if not dummy_flag:
+        lsts  = np.load('res/npy_data/lsts_full.npy')[:Ntimes]
+        freqs = np.load('res/npy_data/freqs_full.npy')[:Nfreqs] * 10e-6
+    ps_true = calc_ps(eor_true)
+elif dummy_flag:
     ps_true = 0.0012 * (1. + 0.3 * np.sin(3. * np.linspace(0., 1., Nfreqs)))
     S_true  = hp.pspec.covariance_from_pspec(ps_true, fourier_op)
 
@@ -143,14 +226,17 @@ else:
     eor_true = eor_true[:Ntimes, :Nfreqs]
     ps_true  = calc_ps(eor_true)
 
-np.save(op_dir + '/eor_true.npy', eor_true)
+save_output('eor_true.npy', eor_true)
 print(f"EoR shape: {eor_true.shape}")
 
 
 # =============================================================================
 # Foregrounds
 # =============================================================================
-fg_true = np.load('res/npy_data/fg_true.npy')[:Ntimes, :Nfreqs]
+if resume:
+    fg_true = np.load(op_path / 'fg_true.npy')
+else:
+    fg_true = np.load('res/npy_data/fg_true.npy')[:Ntimes, :Nfreqs]
 
 fgmodes = np.array([
     scipy.special.legendre(i)(np.linspace(-1., 1., freqs.size))
@@ -159,8 +245,8 @@ fgmodes = np.array([
 
 print(f"FG modes shape: {fgmodes.shape}")
 
-np.save(op_dir + '/fgmodes.npy', fgmodes)
-np.save(op_dir + '/fg_true.npy', fg_true)
+save_output('fgmodes.npy', fgmodes)
+save_output('fg_true.npy', fg_true)
 
 
 # =============================================================================
@@ -193,8 +279,13 @@ n      = (
 # =============================================================================
 # Data
 # =============================================================================
-d = gain_true * (fg_true + eor_true) + n.T
-np.save(op_dir + '/data_true.npy', d)
+if resume:
+    # The noise realisation `n` drawn above is discarded on a resume: the data
+    # the chain is conditioned on is whatever the first segment used.
+    d = np.load(op_path / 'data_true.npy')
+else:
+    d = gain_true * (fg_true + eor_true) + n.T
+save_output('data_true.npy', d)
 
 
 # =============================================================================
@@ -216,6 +307,8 @@ signal_amps, signal_ps, fg_amps, sys_amps, chisq, ln_post = hp.pspec.gibbs_sampl
     nproc              = 1,
     write_Niter        = Niter,
     out_dir            = op_dir,
+    resume             = resume,
+    export_npy         = not args.no_export_npy,
     sys_modes          = sys_modes,
     sys_prior          = sys_prior,
     sys_initial        = sys_amps_true,

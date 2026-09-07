@@ -7,6 +7,7 @@ from . import sys_solver as sys_sol
 from multiprocess import current_process
 from . import utils
 import time
+import warnings
 from uvtools.dspec import gen_window
 from uvtools.utils import FFT
 
@@ -735,7 +736,10 @@ def gibbs_sample(
     nproc=1,
     write_Niter=100,
     out_dir=None,
-    map_estimate=False
+    map_estimate=False,
+    resume=False,
+    export_npy=True,
+    check_metadata=True
 ):
     """
     Run a Gibbs chain on data for a single baseline, using a foreground model
@@ -778,7 +782,10 @@ def gibbs_sample(
         sys_initial (array_like):
             Initial guess of systematics parameters.
         Niter (int):
-            Number of iterations of the sampler to run.
+            Number of iterations of the sampler to run. When `resume=True`
+            this is the number of *additional* iterations appended to the
+            existing chain, so the caller need not know the current chain
+            length.
         seed (int):
             Random seed to use for random parts of the sampler.
         solver_tol (float):
@@ -800,9 +807,34 @@ def gibbs_sample(
         map_estimate (bool):
             Provide the maximum a posteriori sample only, i.e. sets
             `Niter = 1`.
-        
+        resume (bool):
+            If True, continue an existing chain in `out_dir` instead of
+            starting a new one. `Niter` is then the number of *additional*
+            iterations to run, not the total chain length: the existing
+            `gibbs_samples.h5` is appended to, never truncated. The initial
+            state (`signal_ps`, `sys_amps`) and the NumPy RNG state are taken
+            from the last recorded sample, so `signal_ps_initial` and
+            `sys_initial` are ignored, as is `seed` when an exact RNG state is
+            available. Requires `out_dir`. The returned arrays cover the new
+            segment only; the full chain is in the HDF5 file and in the `.npy`
+            export.
+        export_npy (bool):
+            If True (default), write the `.npy` sampler outputs as an export of
+            the full HDF5 chain (see `utils.export_npy_from_h5`). Set to False
+            to skip the export on chains whose `signal_amps` array is too large
+            to duplicate on disk; the HDF5 file still holds every sample.
+        check_metadata (bool):
+            If True (default), a resumed run verifies its configuration and a
+            hash of its input data against the metadata recorded when the chain
+            was started, and raises `ValueError` on a mismatch.
+
 
     Returns:
+        (All returned arrays cover the `Niter` iterations run by this call. On
+        a resumed run that is the new segment only; the complete chain is in
+        `out_dir/gibbs_samples.h5` and, unless `export_npy=False`, in the
+        `.npy` files exported from it.)
+
         signal_amps (array_like):
             Samples of the signal, shape `(Niter, Ntimes, Nfreqs)`.
         signal_ps (array_like):
@@ -822,20 +854,80 @@ def gibbs_sample(
         Niter = 1
         write_Niter = 1
 
+    if resume and out_dir is None:
+        raise ValueError("resume=True requires out_dir (the chain to continue)")
+
+    # --- Warm start ---------------------------------------------------------
+    # Repair first, read second. A chain killed between two of the per-dataset
+    # resizes of a single append leaves the datasets ragged; reading the "last"
+    # sample without repairing would mix rows from two different iterations and
+    # offset every index for the rest of the chain, with no error raised.
+    start_iter = 0
+    resumed_state = None
+    if resume:
+        start_iter = utils.repair_h5_chain(out_dir, verbose=verbose)
+        if start_iter == 0:
+            raise ValueError(
+                f"resume=True but no samples found in "
+                f"{utils.gibbs_sample_h5_path(out_dir)}"
+            )
+        resumed_state = utils.read_gibbs_sample_h5(
+            out_dir, index=-1, names=("signal_ps", "sys_amps")
+        )
+
     # Seed the global RNG once per chain. Every random draw made below comes
     # from this one stream, in a fixed serial order (per iteration: the GCR
     # fluctuation terms for each time, then the systematics draw, then the
     # power spectrum inversion sample), so a given seed reproduces the chain
     # exactly. If seed is None the caller's own RNG state is left untouched.
-    if seed is not None:
+    #
+    # A resumed run must NOT reseed: that would replay the draws the first
+    # segment already used, correlating the two segments. Restoring the state
+    # saved with the last sample instead makes a segmented chain bit-identical
+    # to an uninterrupted one. If no usable state was stored (an older file, or
+    # one truncated by the repair above), fall back to a seed derived from the
+    # resume point -- reproducible, but no longer matching an uninterrupted
+    # run.
+    if resume:
+        rng_state = utils.load_rng_state(out_dir, chain_length=start_iter)
+        if rng_state is None:
+            if seed is not None:
+                derived = int(seed) + start_iter
+                warnings.warn(
+                    "No usable RNG state stored with the chain; reseeding with "
+                    f"seed + start_iter = {derived}. The resumed chain will "
+                    "be reproducible but will not match an uninterrupted run.",
+                    RuntimeWarning,
+                )
+                np.random.seed(derived)
+            else:
+                warnings.warn(
+                    "No usable RNG state stored with the chain and seed is "
+                    "None; continuing from the caller's current RNG state.",
+                    RuntimeWarning,
+                )
+    elif seed is not None:
         np.random.seed(seed)
+
+    # Set initial values of the signal power spectrum and systematics
+    # amplitudes. These two arrays are the entire Markov state: iteration i of
+    # gibbs_step() consumes nothing else from iteration i-1 (signal_amps and
+    # fg_amps are regenerated from them by the GCR step; chisq and ln_post are
+    # diagnostics). A resume therefore only has to restore this pair, taken
+    # from the last recorded sample rather than from the caller's arguments.
+    if resume:
+        signal_ps_current = np.asarray(resumed_state["signal_ps"])
+        sys_amps_current = np.asarray(resumed_state["sys_amps"])
+    else:
+        signal_ps_current = signal_ps_initial
+        sys_amps_current = sys_initial
 
     # Get shape of data/foreground modes
     Ntimes, Nfreqs = vis.shape
     Nmodes = fg_modes.shape[1]
     Nsys_modes = sys_modes.shape[-1]
     assert sys_prior.shape[0] == sys_prior.shape[1] \
-        == sys_initial.shape[0] == sys_modes.shape[-1], \
+        == sys_amps_current.shape[0] == sys_modes.shape[-1], \
         "sys_modes, sys_prior, and sys_initial must have the same number of modes"
     assert sys_modes.shape[0] == Ntimes * Nfreqs, \
         "sys_modes must have shape (Ntimes * Nfreqs, Nsysmodes)"
@@ -847,9 +939,10 @@ def gibbs_sample(
             Ninv.shape[0] == Ntimes
         ), "Ninv shape must be (Ntimes, Nfreqs, Nfreqs) or (Nfreqs, Nfreqs)"
     
-    # Check for sensible initial power spectrum
-    assert np.all( np.logical_and(signal_ps_initial >= signal_ps_prior[0,:],
-                                  signal_ps_initial <= signal_ps_prior[1,:]) ), \
+    # Check for sensible initial power spectrum (on a resume this checks the
+    # power spectrum read back from the chain, not the ignored argument)
+    assert np.all( np.logical_and(signal_ps_current >= signal_ps_prior[0,:],
+                                  signal_ps_current <= signal_ps_prior[1,:]) ), \
            "Initial power spectrum ps_initial is not within ps_prior range."
 
     # Set up arrays for sampling
@@ -862,25 +955,64 @@ def gibbs_sample(
     chisq = np.zeros((Niter, Ntimes, Nfreqs))
     ln_post = np.zeros(Niter)
     
-    # Set initial values the signal power spectrum and systematics amplitudes
-    signal_ps_current = signal_ps_initial
-    sys_amps_current = sys_initial
-
     # Loop over iterations
     if verbose:
         print("Iter     Time [s]    Info    |Ax - b|    T_Sys(s)    Sys Info    Sys |Ax-b|    Chisq    ln Post")
         print("-----    --------    ----    --------    --------    --------    ----------    -----    -------")
 
+    # Provenance recorded with the chain, and checked before a resume is
+    # allowed to append to it. The hashes cover the inputs a resumed run
+    # rebuilds from scratch, so a chain cannot silently continue against
+    # different data, different priors or a different systematics basis.
+    chain_metadata = dict(
+        seed=seed,
+        Ntimes=Ntimes,
+        Nfreqs=Nfreqs,
+        Nmodes=Nmodes,
+        Nsys_modes=Nsys_modes,
+        sample_systematics=bool(sample_systematics),
+        sample_eor_fg=bool(sample_eor_fg),
+        sample_signal_ps=bool(sample_signal_ps),
+        map_estimate=bool(map_estimate),
+        solver=str(solver),
+        vis_hash=utils.array_hash(vis),
+        flags_hash=utils.array_hash(flags),
+        Ninv_hash=utils.array_hash(Ninv),
+        fg_modes_hash=utils.array_hash(fg_modes),
+        sys_modes_hash=utils.array_hash(sys_modes),
+        sys_prior_hash=utils.array_hash(sys_prior),
+        signal_ps_prior_hash=utils.array_hash(signal_ps_prior),
+        sky_model_initial_hash=utils.array_hash(sky_model_initial),
+    )
+    if resume and check_metadata:
+        utils.check_chain_metadata(out_dir, strict=True, **chain_metadata)
+
     # Hold the HDF5 sample file open for the whole chain. This writes exactly
     # the same file as calling utils.append_gibbs_sample_h5() per iteration
     # (same datasets, dtypes, chunking, compression and append order, flushed
     # after every sample), but without reopening it Niter times.
-    h5_writer = utils.GibbsSampleH5Writer(fp=out_dir, overwrite=True)
+    #
+    # overwrite=not resume is the single most important line for warm start:
+    # _open_gibbs_sample_h5() deletes the file when overwrite is True, so a
+    # resume that left it hardcoded would destroy the chain it is resuming.
+    h5_writer = utils.GibbsSampleH5Writer(
+        fp=out_dir, overwrite=not resume, save_rng=True
+    )
+    if not resume:
+        h5_writer.write_metadata(**chain_metadata)
+
+    if verbose and resume:
+        print(
+            f"Resuming chain at iteration {start_iter}; running {Niter} "
+            f"more (to {start_iter + Niter})."
+        )
 
     try:
         for i in range(Niter):
             if verbose:
-                print(f"{i+1:<9d}", end="")
+                # Global iteration index: identical to i+1 for a fresh chain,
+                # continues the numbering of the previous segment on a resume.
+                print(f"{start_iter+i+1:<9d}", end="")
 
             # Do Gibbs iteration
             signal_amps[i], signal_ps[i], fg_amps[i], sys_amps[i], chisq[i], ln_post[i] \
@@ -919,31 +1051,21 @@ def gibbs_sample(
                 ln_post=ln_post[i] # scalar is fine
             )
         
-            if out_dir is not None and (i+1) % write_Niter == 0:
-                # Write current set of samples to disk
-                utils.write_numpy_files(
-                    out_dir,
-                    signal_amps[:i+1],
-                    signal_ps[:i+1],
-                    fg_amps[:i+1],
-                    sys_amps[:i+1],
-                    chisq[:i+1],
-                    ln_post[:i+1]
-                )
+            if export_npy and out_dir is not None and (i+1) % write_Niter == 0:
+                # Checkpoint the .npy files. These are exported from the HDF5
+                # rather than dumped from the in-memory arrays: np.save has no
+                # append path and fixed filenames, so writing the segment here
+                # would replace the whole chain with the segment on a resumed
+                # run -- silently, since all post-processing reads the .npy
+                # files. Exported through the writer's own handle because the
+                # HDF5 file lock forbids a second handle while the chain runs.
+                h5_writer.export_npy()
     finally:
         h5_writer.close()
 
-    if out_dir is not None and Niter % write_Niter > 0:
-        # Write all samples to disk
-        utils.write_numpy_files(
-            out_dir,
-            signal_amps,
-            signal_ps,
-            fg_amps,
-            sys_amps,
-            chisq,
-            ln_post
-        )
+    if export_npy and out_dir is not None and Niter % write_Niter > 0:
+        # Export the full chain (all segments) to .npy
+        utils.export_npy_from_h5(out_dir)
 
     if verbose:
         print()

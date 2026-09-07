@@ -2,6 +2,112 @@
 
 ---
 
+## 2026-09 — Warm start (chain resume)
+
+A Gibbs chain can now be stopped and continued from its last recorded sample.
+A segmented run is bit-identical to the uninterrupted run it replaces. No
+change to the sampler mathematics. Full documentation in
+[`docs/warm-start.md`](docs/warm-start.md); the survey it was built from is
+[`docs/warm-start-plan.md`](docs/warm-start-plan.md).
+
+### `hydra_pspec/utils.py`
+
+**Added**
+- `GIBBS_SAMPLE_DATASETS`, `GIBBS_NPY_FILENAMES`, `RNG_STATE_GROUP` module
+  constants naming the six sample datasets, their `.npy` filenames, and the
+  HDF5 group holding the RNG state.
+- `gibbs_sample_h5_path(fp)`, and an internal `_as_h5` context manager so that
+  every reader accepts an output directory, a path to the `.h5`, or an
+  already-open `h5py.File` (HDF5's file lock forbids a second handle to a file
+  a running chain holds open).
+- `h5_chain_length(fp)`, `truncate_h5_to(fp, n)`, `repair_h5_chain(fp)` —
+  the chain-length and crash-repair path. A run killed between two of the
+  per-dataset resizes of one append leaves the datasets ragged; repairing to
+  their common length before reading is what stops every subsequent index
+  being silently off by one.
+- `read_gibbs_sample_h5(fp, index=-1, names=None)` — the first read path in the
+  module. Returns the requested sample plus `chain_length`.
+- `save_rng_state(f, chain_length)` / `load_rng_state(fp, chain_length)` —
+  persist and restore the MT19937 state, tagged with the chain length it
+  belongs to so a state left out of step by a repair is refused rather than
+  used.
+- `array_hash(arr)`, `write_chain_metadata(f, **kw)`, `read_chain_metadata(fp)`,
+  `check_chain_metadata(fp, **kw)` — run provenance stored as `meta_*` HDF5
+  attributes, so a resume against different data, priors or systematics basis
+  raises instead of quietly sampling the wrong thing.
+- `export_npy_from_h5(fp)` — writes the six `.npy` files from the HDF5 chain,
+  streaming rows through `np.lib.format.open_memmap` so no full array is held
+  in memory (`signal_amps` is 19.2 GB for a 250k-iteration 80x60 run).
+- `GibbsSampleH5Writer`: `save_rng` constructor flag, plus the `file` and
+  `chain_length` properties and the `truncate_to()`, `repair()`,
+  `write_metadata()` and `export_npy()` methods.
+
+**Unchanged**
+- `write_numpy_files`, `append_gibbs_sample_h5` and the existing writer
+  behaviour. `write_numpy_files` is simply no longer what the sampler calls.
+
+### `hydra_pspec/pspec.py`
+
+**Added**
+- `gibbs_sample(..., resume=False, export_npy=True, check_metadata=True)`.
+  Under `resume`, `Niter` is the number of *additional* iterations, so a
+  resume composes with a job scheduler without the caller knowing the current
+  chain length.
+- Chain metadata (seed, shapes, sampling toggles, solver, and SHA-256 hashes
+  of `vis`, `flags`, `Ninv`, `fg_modes`, `sys_modes`, `sys_prior`,
+  `signal_ps_prior`, `sky_model_initial`) written at the start of a run and
+  checked before a resume is allowed to append.
+
+**Fixed**
+- The HDF5 writer was opened with a hardcoded `overwrite=True`, which deletes
+  the file. Now `overwrite=not resume` — a resume would otherwise have
+  destroyed the chain it was about to read.
+- The resume path restores the saved RNG state instead of calling
+  `np.random.seed()`, which would replay the draws the first segment already
+  used and correlate the two segments. Falls back to a `seed + start_iter`
+  reseed, with a `RuntimeWarning`, when no usable state is stored.
+- Both `write_numpy_files` calls replaced by exports from the HDF5. `np.save`
+  has fixed filenames and no append path, so a resumed run would otherwise
+  have left the `.npy` files holding the last segment in place of the whole
+  chain — silently, since all post-processing reads the `.npy` files.
+
+**Changed (no mathematical effect)**
+- The two initial-state assertions (`sys_initial` shape, `signal_ps_initial`
+  within `signal_ps_prior`) now run against the arrays actually used: the
+  caller's arguments on a fresh run, exactly as before; the values read back
+  from the chain on a resume.
+- The verbose iteration counter prints the global iteration number, so a
+  resumed segment continues the previous numbering. Identical for a fresh
+  chain.
+
+### `sys_sampler_wrapper.py`
+
+**Added**
+- `argparse` CLI: `--resume`, `--Niter`, `--out-dir`, `--no-export-npy`.
+- Under `--resume`, `data_true.npy`, `eor_true.npy`, `fg_true.npy` and
+  `gain_true.npy` are loaded from the output directory rather than
+  regenerated, and the `np.save` calls that would overwrite them are skipped.
+  The regeneration is deterministic under `np.random.seed(11)` only while
+  `Ntimes`, `Nfreqs` and `dummy_flag` are unchanged; loading removes that
+  dependency rather than relying on it.
+- The output directory is created if missing.
+
+**Removed**
+- Unused imports: `sys`, `pyuvdata.UVData`, `astropy.units`,
+  `matplotlib.ticker`, `cmcrameri.cm`. The last of these is not installed in
+  the `py10` environment and made the script unimportable there.
+
+### `tests/test_warm_start.py`
+
+**Added**
+- The acceptance test from the plan: 10 iterations straight versus 5 plus a
+  5-iteration resume, asserting all six outputs are bit-identical. Plus
+  coverage for the crash repair, the RNG state round trip, the `.npy` export
+  covering the full chain, and the rejection of a resume against mismatched
+  data or an empty directory.
+
+---
+
 ## 2026-04 — Script and module cleanup
 
 ### `sys_solver.py`
